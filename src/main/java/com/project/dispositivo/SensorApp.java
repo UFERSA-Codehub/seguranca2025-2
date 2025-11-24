@@ -33,13 +33,14 @@ public class SensorApp {
         // Criar sensor
         Sensor sensor = new Sensor(sensorId, nome, localizacao, token);
         
-        // Criar dispositivo
+        // Criar dispositivo com senha (token) para autenticação
         DispositivoSensor dispositivo = new DispositivoSensor(
             sensor, 
             edgeHost, 
-            edgePort, 
-            2000,  // intervalo mínimo: 2 segundos
-            3000   // intervalo máximo: 3 segundos
+            edgePort,
+            token,  // Senha/token para autenticação JWT
+            2000,   // intervalo mínimo: 2 segundos
+            3000    // intervalo máximo: 3 segundos
         );
         
         // Registrar hook para parada graceful

@@ -297,11 +297,18 @@ public class EdgeServer implements Runnable {
                 return;
             }
 
-            boolean autenticado = autenticacao.autenticar(mensagem.getSensorId(), mensagem.getCredenciais());
+            // Verificar se é mensagem de autenticação (requisição de JWT)
+            if (mensagem.getType() == MessageType.SENSOR_AUTH_REQUEST) {
+                processarAutenticacao(mensagem, origem, keys);
+                return;
+            }
+
+            // Para mensagens de dados, validar JWT
+            boolean autenticado = autenticacao.autenticarComJWT(mensagem.getSensorId(), mensagem.getCredenciais());
 
             if (!autenticado) {
                 totalMensagensInvalidas++;
-                System.err.println("[EdgeServer] 🚫 Autenticação falhou: " + mensagem.getSensorId() + " de " + origem);
+                System.err.println("[EdgeServer] 🚫 Autenticação JWT falhou: " + mensagem.getSensorId() + " de " + origem);
                 return;
             }
 
@@ -327,6 +334,73 @@ public class EdgeServer implements Runnable {
         } catch (Exception e) {
             totalMensagensInvalidas++;
             System.err.println("[EdgeServer] ❌ Erro ao processar mensagem: " + e.getMessage());
+            if (DebugConfig.DEBUG_MODE) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void processarAutenticacao(UdpMessage mensagem, String origem, SessionKeys keys) {
+        String sensorId = mensagem.getSensorId();
+        String senha = mensagem.getCredenciais();
+        
+        if (DebugConfig.DEBUG_MODE) {
+            System.out.println("[EdgeServer] 🔐 Requisição de autenticação de: " + sensorId + " de " + origem);
+        }
+        
+        // Gerar JWT usando GestorAutenticacao
+        String jwt = autenticacao.registrarESensorEObterJWT(sensorId, senha);
+        
+        if (jwt == null) {
+            totalMensagensInvalidas++;
+            System.err.println("[EdgeServer] ❌ Autenticação falhou: " + sensorId + " de " + origem);
+            enviarRespostaAuth(origem, MessageType.SENSOR_AUTH_FAILED, null, keys);
+            return;
+        }
+        
+        totalMensagensValidas++;
+        System.out.println("[EdgeServer] ✅ JWT gerado para sensor: " + sensorId + " de " + origem);
+        enviarRespostaAuth(origem, MessageType.SENSOR_AUTH_SUCCESS, jwt, keys);
+    }
+
+    private void enviarRespostaAuth(String destino, MessageType tipoResposta, String jwt, SessionKeys keys) {
+        try {
+            // Parsear endereço (formato: "IP:porta")
+            String[] parts = destino.split(":");
+            if (parts.length != 2) {
+                System.err.println("[EdgeServer] ❌ Formato de destino inválido: " + destino);
+                return;
+            }
+            
+            String ip = parts[0];
+            int porta = Integer.parseInt(parts[1]);
+            
+            // Criar mensagem de resposta
+            UdpMessage resposta = new UdpMessage(
+                tipoResposta,
+                "EDGE_SERVER",
+                jwt != null ? jwt : "AUTH_FAILED",
+                null  // Sem dados ambientais
+            );
+            
+            // Cifrar e enviar
+            byte[] dadosCifrados = resposta.encrypt(keys);
+            DatagramPacket pacote = new DatagramPacket(
+                dadosCifrados, 
+                dadosCifrados.length, 
+                java.net.InetAddress.getByName(ip), 
+                porta
+            );
+            
+            socket.send(pacote);
+            
+            if (DebugConfig.DEBUG_MODE) {
+                System.out.println("[EdgeServer] 📤 Resposta de autenticação enviada para " + destino + 
+                    " (tipo: " + tipoResposta + ")");
+            }
+            
+        } catch (Exception e) {
+            System.err.println("[EdgeServer] ❌ Erro ao enviar resposta de autenticação: " + e.getMessage());
             if (DebugConfig.DEBUG_MODE) {
                 e.printStackTrace();
             }

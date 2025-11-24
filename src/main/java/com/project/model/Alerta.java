@@ -3,8 +3,6 @@ package com.project.model;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.project.security.DebugConfig;
-
 public class Alerta {
 
     private String id;                          // Identificador único do alerta

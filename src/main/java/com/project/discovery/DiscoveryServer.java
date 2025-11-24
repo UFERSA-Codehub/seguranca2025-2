@@ -1,6 +1,5 @@
 package com.project.discovery;
 
-import com.project.messageBus.MessageType;
 import com.project.messageBus.udp.DiscoveryMessage;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -198,8 +197,9 @@ public class DiscoveryServer implements Runnable {
 
     private DiscoveryMessage processarDescobertaEdge() {
         // Remover serviços inativos
-        edgeServers.removeIf(edge -> !edge.estaAtivo(TIMEOUT_HEARTBEAT_MS));
-        
+        // COMENTADO: Edge Servers não enviam heartbeat periódico
+        // edgeServers.removeIf(edge -> !edge.estaAtivo(TIMEOUT_HEARTBEAT_MS));
+
         if (edgeServers.isEmpty()) {
             System.out.println("[DiscoveryServer] ⚠️  Nenhum Edge Server disponível");
             return DiscoveryMessage.erro("Nenhum Edge Server disponível");
@@ -213,8 +213,9 @@ public class DiscoveryServer implements Runnable {
 
     private DiscoveryMessage processarDescobertaDatacenter() {
         // Remover serviços inativos
-        datacenters.removeIf(dc -> !dc.estaAtivo(TIMEOUT_HEARTBEAT_MS));
-        
+        // COMENTADO: Datacenters não enviam heartbeat periódico
+        // datacenters.removeIf(dc -> !dc.estaAtivo(TIMEOUT_HEARTBEAT_MS));
+
         if (datacenters.isEmpty()) {
             System.out.println("[DiscoveryServer] ⚠️  Nenhum Datacenter disponível");
             return DiscoveryMessage.erro("Nenhum Datacenter disponível");

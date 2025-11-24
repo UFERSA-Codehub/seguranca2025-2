@@ -19,26 +19,26 @@ public class UdpMessage extends Message implements SecureMessage {
     public UdpMessage(MessageType tipo, String sensorId, String credenciais, DadosAmbientais dados) {
         super(tipo);
         
-        if (!tipo.isUDP()) {
-            throw new IllegalArgumentException("Tipo deve ser SENSOR_REGISTER ou SENSOR_UPDATE");
+        if (!tipo.isUDP() && !tipo.isSensorAuth()) {
+            throw new IllegalArgumentException("Tipo deve ser SENSOR_REGISTER, SENSOR_UPDATE ou tipo de autenticação");
         }
         
         this.sensorId = sensorId;
         this.credenciais = credenciais;
-        this.dados = dados;
+        this.dados = dados;  // Pode ser null para mensagens de autenticação
     }
 
     public UdpMessage(MessageType tipo, String sensorId, String credenciais, 
                       DadosAmbientais dados, long timestamp) {
         super(tipo, timestamp);
         
-        if (!tipo.isUDP()) {
-            throw new IllegalArgumentException("Tipo deve ser SENSOR_REGISTER ou SENSOR_UPDATE");
+        if (!tipo.isUDP() && !tipo.isSensorAuth()) {
+            throw new IllegalArgumentException("Tipo deve ser SENSOR_REGISTER, SENSOR_UPDATE ou tipo de autenticação");
         }
         
         this.sensorId = sensorId;
         this.credenciais = credenciais;
-        this.dados = dados;
+        this.dados = dados;  // Pode ser null para mensagens de autenticação
     }
     
     // Getters
@@ -50,11 +50,26 @@ public class UdpMessage extends Message implements SecureMessage {
         return credenciais;
     }
     
+    public String getToken() {
+        return credenciais;  // Token é transmitido no campo credenciais
+    }
+    
     public DadosAmbientais getDados() {
         return dados;
     }
 
     private String serializeToString() {
+        if (dados == null) {
+            // Formato para mensagens sem dados (autenticação)
+            return String.format("%s||%s||%s||%d",
+                type.name(),
+                sensorId,
+                credenciais != null ? credenciais : "",
+                timestamp
+            );
+        }
+        
+        // Formato normal com dados ambientais
         return String.format("%s||%s||%s||%d||%s||%.2f||%.2f||%.2f||%.2f||%.2f||%.2f||%.2f",
             type.name(),
             sensorId,
@@ -80,14 +95,25 @@ public class UdpMessage extends Message implements SecureMessage {
         try {
             String[] parts = data.split("\\|\\|");
             
-            if (parts.length < 12) {
-                throw new IllegalArgumentException("Formato de mensagem inválido: campos insuficientes");
+            if (parts.length < 4) {
+                throw new IllegalArgumentException("Formato de mensagem inválido: campos mínimos insuficientes");
             }
             
             MessageType tipo = MessageType.valueOf(parts[0]);
             String sensorId = parts[1];
             String credenciais = parts[2];
             long timestamp = Long.parseLong(parts[3]);
+            
+            // Se for mensagem de autenticação (sem dados ambientais)
+            if (tipo.isSensorAuth()) {
+                return new UdpMessage(tipo, sensorId, credenciais, null, timestamp);
+            }
+            
+            // Para mensagens com dados ambientais
+            if (parts.length < 12) {
+                throw new IllegalArgumentException("Formato de mensagem inválido: campos insuficientes para dados ambientais");
+            }
+            
             String localizacao = parts[4];
             double temperatura = Double.parseDouble(parts[5]);
             double co2 = Double.parseDouble(parts[6]);
@@ -132,6 +158,12 @@ public class UdpMessage extends Message implements SecureMessage {
     
     @Override
     public String toJSON() {
+        if (dados == null) {
+            return String.format(
+                "{\"type\":\"%s\",\"sensorId\":\"%s\",\"timestamp\":%d}",
+                type.name(), sensorId, timestamp
+            );
+        }
         return String.format(
             "{\"type\":\"%s\",\"sensorId\":\"%s\",\"timestamp\":%d,\"dados\":{\"temp\":%.2f,\"co2\":%.2f,\"umid\":%.2f}}",
             type.name(), sensorId, timestamp,
@@ -147,10 +179,11 @@ public class UdpMessage extends Message implements SecureMessage {
         if (credenciais == null || credenciais.isEmpty()) {
             throw new IllegalStateException("Credenciais não podem ser nulas ou vazias");
         }
-        if (dados == null) {
-            throw new IllegalStateException("Dados ambientais não podem ser nulos");
+        // Dados podem ser null para mensagens de autenticação
+        if (dados == null && !type.isSensorAuth()) {
+            throw new IllegalStateException("Dados ambientais não podem ser nulos para mensagens de dados");
         }
-        if (!type.isUDP()) {
+        if (!type.isUDP() && !type.isSensorAuth()) {
             throw new IllegalStateException("Tipo de mensagem inválido para UdpMessage");
         }
     }
@@ -164,74 +197,5 @@ public class UdpMessage extends Message implements SecureMessage {
     public String toString() {
         return String.format("UdpMessage{tipo=%s, sensorId='%s', timestamp=%d, dados=%s}",
             type, sensorId, timestamp, dados);
-    }
-    
-    // ========== MÉTODOS DE COMPATIBILIDADE COM MensagemSensor ==========
-
-    public String serializar() {
-        return serializeToString();
-    }
-
-    public static UdpMessage deserializar(String data) {
-        return deserializeFromString(data);
-    }
-
-    public String empacotar(SessionKeys keys) throws Exception {
-        byte[] encrypted = encrypt(keys);
-        
-        // Para compatibilidade, extrair HMAC e CIPHERTEXT
-        // Formato CryptoProtocol: [IV(16)][HMAC(32)][CIPHERTEXT]
-        // Formato antigo: HMAC||CIPHERTEXT
-        
-        byte[] hmac = new byte[32];
-        byte[] ivAndCipher = new byte[encrypted.length - 32];
-        
-        System.arraycopy(encrypted, 16, hmac, 0, 32); // HMAC está em [16..48)
-        System.arraycopy(encrypted, 0, ivAndCipher, 0, 16); // IV
-        System.arraycopy(encrypted, 48, ivAndCipher, 16, encrypted.length - 48); // CIPHER
-        
-        String hmacHex = bytesToHex(hmac);
-        String cipherBase64 = java.util.Base64.getEncoder().encodeToString(ivAndCipher);
-        
-        return hmacHex + "||" + cipherBase64;
-    }
-
-    public static UdpMessage desempacotar(String pacote, SessionKeys keys) throws Exception {
-        // Converter formato antigo HMAC||CIPHERTEXT para novo formato
-        String[] parts = pacote.split("\\|\\|", 2);
-        
-        if (parts.length < 2) {
-            throw new IllegalArgumentException("Formato de pacote inválido");
-        }
-        
-        byte[] hmac = hexToBytes(parts[0]);
-        byte[] ivAndCipher = java.util.Base64.getDecoder().decode(parts[1]);
-        
-        // Reconstruir formato: [IV(16)][HMAC(32)][CIPHERTEXT]
-        byte[] encrypted = new byte[ivAndCipher.length + 32];
-        System.arraycopy(ivAndCipher, 0, encrypted, 0, 16); // IV
-        System.arraycopy(hmac, 0, encrypted, 16, 32); // HMAC
-        System.arraycopy(ivAndCipher, 16, encrypted, 48, ivAndCipher.length - 16); // CIPHER
-        
-        return decryptMessage(encrypted, keys);
-    }
-    
-    // Métodos auxiliares para conversão hex
-    private static String bytesToHex(byte[] bytes) {
-        StringBuilder sb = new StringBuilder();
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
-    }
-    
-    private static byte[] hexToBytes(String hex) {
-        int len = hex.length();
-        byte[] data = new byte[len / 2];
-        for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
-                                + Character.digit(hex.charAt(i+1), 16));
-        }
-        return data;
     }
 }

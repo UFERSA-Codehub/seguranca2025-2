@@ -8,6 +8,12 @@ public enum MessageType {
 
     SENSOR_UPDATE,
     
+    SENSOR_AUTH_REQUEST,
+    
+    SENSOR_AUTH_SUCCESS,
+    
+    SENSOR_AUTH_FAILED,
+    
     // ========== TCP Handshake (Edge ↔ Datacenter) ==========
     
     TCP_HELLO,
@@ -50,6 +56,12 @@ public enum MessageType {
 
     public boolean isUDP() {
         return this == SENSOR_REGISTER || this == SENSOR_UPDATE;
+    }
+    
+    public boolean isSensorAuth() {
+        return this == SENSOR_AUTH_REQUEST || 
+               this == SENSOR_AUTH_SUCCESS || 
+               this == SENSOR_AUTH_FAILED;
     }
 
     public boolean isTcpHandshake() {

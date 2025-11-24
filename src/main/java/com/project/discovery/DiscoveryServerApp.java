@@ -8,15 +8,20 @@ public class DiscoveryServerApp {
     
     public static void main(String[] args) {
         int porta = PORTA_PADRAO;
-        
-        // Permitir porta customizada via argumento
-        if (args.length > 0) {
-            try {
-                porta = Integer.parseInt(args[0]);
-            } catch (NumberFormatException e) {
-                System.err.println("❌ Porta inválida: " + args[0]);
-                System.err.println("Uso: java DiscoveryServerApp [porta]");
-                System.exit(1);
+        boolean daemonMode = false;
+
+        // Processar argumentos
+        for (String arg : args) {
+            if (arg.equals("--daemon")) {
+                daemonMode = true;
+            } else {
+                try {
+                    porta = Integer.parseInt(arg);
+                } catch (NumberFormatException e) {
+                    System.err.println("❌ Porta inválida: " + arg);
+                    System.err.println("Uso: java DiscoveryServerApp [porta] [--daemon]");
+                    System.exit(1);
+                }
             }
         }
         
@@ -45,55 +50,65 @@ public class DiscoveryServerApp {
         
         try {
             servidor.iniciar();
-            
-            System.out.println("╔════════════════════════════════════════════════════════════════╗");
-            System.out.println("║  COMANDOS DISPONÍVEIS:                                         ║");
-            System.out.println("║    status  - Exibe serviços registrados                        ║");
-            System.out.println("║    quit    - Encerra o servidor                                ║");
-            System.out.println("╚════════════════════════════════════════════════════════════════╝\n");
-            
-            // Loop de comandos
-            Scanner scanner = new Scanner(System.in);
-            boolean executando = true;
-            
-            while (executando && servidor.isExecutando()) {
-                System.out.print("> ");
-                String comando = scanner.nextLine().trim().toLowerCase();
-                
-                switch (comando) {
-                    case "status":
-                        servidor.exibirStatus();
-                        break;
-                        
-                    case "quit":
-                    case "exit":
-                        executando = false;
-                        System.out.println("[DiscoveryServerApp] 🛑 Encerrando servidor...");
-                        break;
-                        
-                    case "help":
-                    case "?":
-                        System.out.println("\nComandos disponíveis:");
-                        System.out.println("  status - Exibe serviços registrados");
-                        System.out.println("  quit   - Encerra o servidor\n");
-                        break;
-                        
-                    case "":
-                        // Linha vazia, ignorar
-                        break;
-                        
-                    default:
-                        System.out.println("❌ Comando desconhecido: " + comando);
-                        System.out.println("Digite 'help' para ver comandos disponíveis.\n");
-                        break;
+
+            if (!daemonMode) {
+                System.out.println("╔════════════════════════════════════════════════════════════════╗");
+                System.out.println("║  COMANDOS DISPONÍVEIS:                                         ║");
+                System.out.println("║    status  - Exibe serviços registrados                        ║");
+                System.out.println("║    quit    - Encerra o servidor                                ║");
+                System.out.println("╚════════════════════════════════════════════════════════════════╝\n");
+
+                // Loop de comandos (SOMENTE modo interativo)
+                Scanner scanner = new Scanner(System.in);
+                boolean executando = true;
+
+                while (executando && servidor.isExecutando()) {
+                    System.out.print("> ");
+                    String comando = scanner.nextLine().trim().toLowerCase();
+
+                    switch (comando) {
+                        case "status":
+                            servidor.exibirStatus();
+                            break;
+
+                        case "quit":
+                        case "exit":
+                            executando = false;
+                            System.out.println("[DiscoveryServerApp] 🛑 Encerrando servidor...");
+                            break;
+
+                        case "help":
+                        case "?":
+                            System.out.println("\nComandos disponíveis:");
+                            System.out.println("  status - Exibe serviços registrados");
+                            System.out.println("  quit   - Encerra o servidor\n");
+                            break;
+
+                        case "":
+                            // Linha vazia, ignorar
+                            break;
+
+                        default:
+                            System.out.println("❌ Comando desconhecido: " + comando);
+                            System.out.println("Digite 'help' para ver comandos disponíveis.\n");
+                            break;
+                    }
+                }
+
+                scanner.close();
+                servidor.parar();
+                System.out.println("\n[DiscoveryServerApp] 👋 Aplicação finalizada.");
+            } else {
+                // MODO DAEMON: apenas mantém o servidor rodando
+                System.out.println("[DiscoveryServerApp] 🚀 Rodando em modo daemon...");
+                System.out.println("[DiscoveryServerApp] Pressione Ctrl+C para parar\n");
+
+                // Manter aplicação rodando até shutdown hook
+                while (servidor.isExecutando()) {
+                    Thread.sleep(1000);
                 }
             }
-            
-            scanner.close();
-            servidor.parar();
-            
-            System.out.println("\n[DiscoveryServerApp] 👋 Aplicação finalizada.");
-            
+
         } catch (Exception e) {
             System.err.println("[DiscoveryServerApp] ❌ Erro fatal: " + e.getMessage());
             e.printStackTrace();
