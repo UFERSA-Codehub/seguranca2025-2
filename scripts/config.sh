@@ -22,15 +22,15 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Classes Java
-DISCOVERY_CLASS="com.project.discovery.DiscoveryServerApp"
-DATACENTER_CLASS="com.project.datacenter.DatacenterApp"
-EDGE_CLASS="com.project.edge.EdgeServerApp"
-SENSOR_CLASS="com.project.dispositivo.SensorApp"
+DISCOVERY_CLASS="com.project.server.discovery.DiscoveryServerApp"
+DATACENTER_CLASS="com.project.server.datacenter.DatacenterApp"
+EDGE_CLASS="com.project.server.edge.EdgeServerApp"
+SENSOR_CLASS="com.project.sensors.SensorApp"
 
 # Delays (segundos)
-DISCOVERY_DELAY=2
-DATACENTER_DELAY=2
-EDGE_DELAY=3
+DISCOVERY_DELAY=1
+DATACENTER_DELAY=3
+EDGE_DELAY=2
 SENSOR_DELAY=1
 
 # Configuração de sensores (ID|Nome|Localização|Senha)

@@ -1,18 +1,23 @@
 #!/bin/bash
 
 ###############################################################################
-# Script de Inicialização do Sistema de Monitoramento Ambiental
+# Script de Inicialização do Sistema de Monitoramento Ambiental (MODO INTERATIVO)
+#
+# Diferença do start-system.sh:
+#   - Discovery e Datacenter executam DENTRO do tmux (interativos)
+#   - Você pode usar comandos 'status' e 'quit' diretamente nos painéis
+#   - Edge e Sensores continuam em background (logs em arquivo)
 #
 # Fluxo:
 #   1. Verifica se tmux está instalado
-#   2. Verifica se sessão tmux já existe
-#   3. Inicia serviços na ordem: Discovery → Datacenter → Edge → Sensores
-#   4. Cria sessão tmux com layout 2x5 (8 painéis)
+#   2. Cria sessão tmux com layout 2 janelas (8 painéis)
+#   3. Executa Discovery e Datacenter DENTRO do tmux (com send-keys)
+#   4. Executa Edge e Sensores em background
 #   5. Anexa automaticamente à sessão
-#   6. Cleanup ao sair (mata processos)
+#   6. Cleanup ao sair (mata apenas processos background)
 #
 # Uso:
-#   ./scripts/start-system.sh
+#   ./scripts/start-system-interactive.sh
 ###############################################################################
 
 # Importar configurações
@@ -48,56 +53,120 @@ if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
 fi
 
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║     SISTEMA DE MONITORAMENTO AMBIENTAL - INICIALIZAÇÃO         ║"
+echo "║  SISTEMA DE MONITORAMENTO AMBIENTAL - MODO INTERATIVO          ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
+echo -e "${GREEN}🎮 Modo Interativo Ativado:${NC}"
+echo "  • Discovery e Datacenter terão comandos disponíveis"
+echo "  • Digite 'status' para ver estatísticas"
+echo "  • Digite 'quit' para encerrar cada serviço"
+echo ""
 
 ###############################################################################
-# FASE 2: INICIAR SERVIÇOS
+# FASE 2: CRIAR ESTRUTURA TMUX
 ###############################################################################
 
-echo -e "${GREEN}[1/4]${NC} Iniciando Discovery Service (UDP:4000)..."
-mvn -f "$POM_FILE" exec:java \
-    -Dexec.mainClass="$DISCOVERY_CLASS" \
-    -Dexec.args="--daemon" \
-    -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/discovery.log" 2>&1 &
-DISCOVERY_PID=$!
-echo "$DISCOVERY_PID" > "$PID_DIR/discovery.pid"
+echo -e "${GREEN}📊 Criando sessão tmux com 2 janelas...${NC}"
+echo ""
+
+# Criar sessão com janela "Serviços"
+tmux new-session -d -s "$TMUX_SESSION" -n "Serviços"
+
+# Habilitar títulos de painéis IMEDIATAMENTE
+tmux set-option -t "$TMUX_SESSION" pane-border-status top
+tmux set-option -t "$TMUX_SESSION" pane-border-format " #{pane_title} "
+
+###############################################################################
+# JANELA 0: SERVIÇOS (Discovery, Datacenter, Edge)
+###############################################################################
+
+echo -e "${GREEN}[1/4]${NC} Iniciando Discovery Service (UDP:4000) - MODO INTERATIVO..."
+
+# Painel 0: Discovery (INTERATIVO via send-keys)
+tmux select-pane -t "$TMUX_SESSION:Serviços.0" -T "🔍 Discovery (UDP:4000)"
+tmux send-keys -t "$TMUX_SESSION:Serviços.0" \
+    "cd '$PROJECT_DIR' && mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$DISCOVERY_CLASS'" C-m
+
+echo -e "${GREEN}✓${NC} Discovery iniciado em modo interativo (painel 0)"
+echo ""
 sleep $DISCOVERY_DELAY
-echo -e "${GREEN}✓${NC} Discovery iniciado (PID: $DISCOVERY_PID)"
-echo ""
 
-echo -e "${GREEN}[2/4]${NC} Iniciando Datacenter (TCP:8080, HTTP:9090)..."
-mvn -f "$POM_FILE" exec:java \
-    -Dexec.mainClass="$DATACENTER_CLASS" \
-    -Dexec.args="--daemon" \
-    -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/datacenter.log" 2>&1 &
-DATACENTER_PID=$!
-echo "$DATACENTER_PID" > "$PID_DIR/datacenter.pid"
+echo -e "${GREEN}[2/4]${NC} Iniciando Datacenter (TCP:8080, HTTP:9090) - MODO INTERATIVO..."
+
+# Painel 1: Datacenter (INTERATIVO via send-keys)
+tmux split-window -h -t "$TMUX_SESSION:Serviços"
+tmux select-pane -t "$TMUX_SESSION:Serviços.1" -T "💾 Datacenter (TCP:8080)"
+tmux send-keys -t "$TMUX_SESSION:Serviços.1" \
+    "cd '$PROJECT_DIR' && mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$DATACENTER_CLASS'" C-m
+
+echo -e "${GREEN}✓${NC} Datacenter iniciado em modo interativo (painel 1)"
+echo ""
 sleep $DATACENTER_DELAY
-echo -e "${GREEN}✓${NC} Datacenter iniciado (PID: $DATACENTER_PID)"
-echo ""
 
-echo -e "${GREEN}[3/4]${NC} Iniciando Edge Server (UDP:5000)..."
+echo -e "${GREEN}[3/4]${NC} Iniciando Edge Server (UDP:5000) - background..."
+
+# Painel 2: Edge (background com tail do log)
+tmux split-window -h -t "$TMUX_SESSION:Serviços.1"
+tmux select-pane -t "$TMUX_SESSION:Serviços.2" -T "🌐 Edge (UDP:5000)"
+
+# Edge continua em background
 mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$EDGE_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > "$LOG_DIR/edge.log" 2>&1 &
 EDGE_PID=$!
 echo "$EDGE_PID" > "$PID_DIR/edge.pid"
+
+# Mostrar log no painel
+tmux send-keys -t "$TMUX_SESSION:Serviços.2" "tail -f '$LOG_DIR/edge.log'" C-m
+
 sleep $EDGE_DELAY
 echo -e "${GREEN}✓${NC} Edge Server iniciado (PID: $EDGE_PID)"
 echo ""
 
-echo -e "${GREEN}[4/4]${NC} Iniciando Sensores (5 processos)..."
+# Layout tiled para distribuir igualmente os 3 painéis
+tmux select-layout -t "$TMUX_SESSION:Serviços" tiled
+
+###############################################################################
+# JANELA 1: SENSORES (Sensor 1, 2, 3, 4, 999)
+###############################################################################
+
+echo -e "${GREEN}[4/4]${NC} Iniciando Sensores (5 processos) - background..."
+
+# Criar janela "Sensores"
+tmux new-window -t "$TMUX_SESSION" -n "Sensores"
+
+# Painel 0: Sensor 1
+tmux select-pane -t "$TMUX_SESSION:Sensores.0" -T "📡 Sensor 1 (Parque)"
+
+# Painel 1: Sensor 2
+tmux split-window -h -t "$TMUX_SESSION:Sensores"
+tmux select-pane -t "$TMUX_SESSION:Sensores.1" -T "📡 Sensor 2 (Industrial)"
+
+# Painel 2: Sensor 3
+tmux split-window -h -t "$TMUX_SESSION:Sensores.1"
+tmux select-pane -t "$TMUX_SESSION:Sensores.2" -T "📡 Sensor 3 (Comercial)"
+
+# Painel 3: Sensor 4 (dividir verticalmente do painel 0)
+tmux split-window -v -t "$TMUX_SESSION:Sensores.0"
+tmux select-pane -t "$TMUX_SESSION:Sensores.3" -T "📡 Sensor 4 (Residencial)"
+
+# Painel 4: Sensor 999 (dividir horizontalmente do painel 3)
+tmux split-window -h -t "$TMUX_SESSION:Sensores.3"
+tmux select-pane -t "$TMUX_SESSION:Sensores.4" -T "⚠️ Sensor 999 (Malicioso)"
+
+# Layout tiled para distribuir os 5 painéis
+tmux select-layout -t "$TMUX_SESSION:Sensores" tiled
+
+# Iniciar sensores em background e mostrar logs nos painéis
+painel_idx=0
 for sensor_config in "${SENSORS[@]}"; do
     IFS='|' read -r sensor_id nome localizacao token <<< "$sensor_config"
     
     # Construir argumentos com aspas para campos com espaços
     sensor_args="$sensor_id \"$nome\" \"$localizacao\" $token $EDGE_HOST $EDGE_PORT"
     
+    # Iniciar sensor em background
     mvn -f "$POM_FILE" exec:java \
         -Dexec.mainClass="$SENSOR_CLASS" \
         -Dexec.args="$sensor_args" \
@@ -106,8 +175,14 @@ for sensor_config in "${SENSORS[@]}"; do
     
     SENSOR_PID=$!
     echo "$SENSOR_PID" > "$PID_DIR/$sensor_id.pid"
+    
+    # Mostrar log no painel correspondente
+    tmux send-keys -t "$TMUX_SESSION:Sensores.$painel_idx" "tail -f '$LOG_DIR/$sensor_id.log'" C-m
+    
     echo -e "${GREEN}  ✓${NC} $sensor_id iniciado (PID: $SENSOR_PID)"
     sleep $SENSOR_DELAY
+    
+    ((painel_idx++))
 done
 echo ""
 
@@ -116,73 +191,8 @@ echo ""
 sleep 2
 
 ###############################################################################
-# FASE 3: CRIAR SESSÃO TMUX COM LAYOUT
+# FASE 3: VOLTAR PARA JANELA SERVIÇOS
 ###############################################################################
-
-echo -e "${GREEN}📊 Criando sessão tmux com 2 janelas...${NC}"
-echo ""
-
-###############################################################################
-# JANELA 0: SERVIÇOS (Discovery, Datacenter, Edge)
-###############################################################################
-
-# Criar sessão com janela "Serviços"
-tmux new-session -d -s "$TMUX_SESSION" -n "Serviços" \
-    "tail -f $LOG_DIR/discovery.log"
-
-# Adicionar Datacenter e Edge
-tmux split-window -h -t "$TMUX_SESSION:Serviços" \
-    "tail -f $LOG_DIR/datacenter.log"
-
-tmux split-window -h -t "$TMUX_SESSION:Serviços.1" \
-    "tail -f $LOG_DIR/edge.log"
-
-# Layout tiled para distribuir igualmente os 3 painéis
-tmux select-layout -t "$TMUX_SESSION:Serviços" tiled
-
-# Títulos da janela Serviços
-tmux select-pane -t "$TMUX_SESSION:Serviços.0" -T "🔍 Discovery (UDP:4000)"
-tmux select-pane -t "$TMUX_SESSION:Serviços.1" -T "💾 Datacenter (TCP:8080)"
-tmux select-pane -t "$TMUX_SESSION:Serviços.2" -T "🌐 Edge (UDP:5000)"
-
-###############################################################################
-# JANELA 1: SENSORES (Sensor 1, 2, 3, 4, 999)
-###############################################################################
-
-# Criar janela "Sensores"
-tmux new-window -t "$TMUX_SESSION" -n "Sensores" \
-    "tail -f $LOG_DIR/SENSOR_001.log"
-
-# Adicionar sensores 2, 3, 4, 999
-tmux split-window -h -t "$TMUX_SESSION:Sensores" \
-    "tail -f $LOG_DIR/SENSOR_002.log"
-
-tmux split-window -h -t "$TMUX_SESSION:Sensores.1" \
-    "tail -f $LOG_DIR/SENSOR_003.log"
-
-tmux split-window -v -t "$TMUX_SESSION:Sensores.0" \
-    "tail -f $LOG_DIR/SENSOR_004.log"
-
-tmux split-window -h -t "$TMUX_SESSION:Sensores.3" \
-    "tail -f $LOG_DIR/SENSOR_999.log"
-
-# Layout tiled para distribuir os 5 painéis
-tmux select-layout -t "$TMUX_SESSION:Sensores" tiled
-
-# Títulos da janela Sensores
-tmux select-pane -t "$TMUX_SESSION:Sensores.0" -T "📡 Sensor 1 (Parque)"
-tmux select-pane -t "$TMUX_SESSION:Sensores.1" -T "📡 Sensor 2 (Industrial)"
-tmux select-pane -t "$TMUX_SESSION:Sensores.2" -T "📡 Sensor 3 (Comercial)"
-tmux select-pane -t "$TMUX_SESSION:Sensores.3" -T "📡 Sensor 4 (Residencial)"
-tmux select-pane -t "$TMUX_SESSION:Sensores.4" -T "⚠️ Sensor 999 (Malicioso)"
-
-###############################################################################
-# CONFIGURAÇÕES GLOBAIS
-###############################################################################
-
-# Habilitar títulos de painéis em todas as janelas (APÓS todos os painéis serem criados e títulos definidos)
-tmux set-option -t "$TMUX_SESSION" pane-border-status top
-tmux set-option -t "$TMUX_SESSION" pane-border-format " #{pane_title} "
 
 # Voltar para janela Serviços (painel Discovery)
 tmux select-window -t "$TMUX_SESSION:Serviços"
@@ -198,11 +208,15 @@ echo ""
 ###############################################################################
 
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║                 ENTRANDO NO MONITOR DO SISTEMA                 ║"
+echo "║              ENTRANDO NO MONITOR DO SISTEMA (INTERATIVO)       ║"
 echo "╠════════════════════════════════════════════════════════════════╣"
 echo "║  Layout: 2 janelas tmux com 8 painéis                          ║"
 echo "║                                                                ║"
-echo "║  JANELA 0 [Serviços]:  Discovery | Datacenter | Edge           ║"
+echo "║  JANELA 0 [Serviços]:                                          ║"
+echo "║    • Discovery (INTERATIVO) - digite 'status', 'quit'          ║"
+echo "║    • Datacenter (INTERATIVO) - digite 'status', 'quit'         ║"
+echo "║    • Edge (logs apenas)                                        ║"
+echo "║                                                                ║"
 echo "║  JANELA 1 [Sensores]:  Sensor 1-4 | Sensor 999 (Malicioso)     ║"
 echo "╠════════════════════════════════════════════════════════════════╣"
 echo "║  Navegação entre janelas:                                      ║"
@@ -215,8 +229,14 @@ echo "║  Atalhos úteis:                                                ║"
 echo "║    Ctrl+B Setas      - Navegar entre painéis                   ║"
 echo "║    Ctrl+B [          - Modo scroll (Q para sair)               ║"
 echo "║    Ctrl+B Z          - Zoom no painel atual                    ║"
-echo "║    Ctrl+B D          - Desanexar (logs continuam)              ║"
+echo "║    Ctrl+B D          - Desanexar (processos continuam)         ║"
 echo "║    Ctrl+D            - Sair e parar sistema                    ║"
+echo "╠════════════════════════════════════════════════════════════════╣"
+echo "║  🎮 MODO INTERATIVO:                                           ║"
+echo "║    • Navegue até Discovery/Datacenter e digite comandos        ║"
+echo "║    • 'status' mostra estatísticas                              ║"
+echo "║    • 'quit' encerra o serviço                                  ║"
+echo "║    • Ctrl+C também funciona                                    ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 sleep 3
@@ -229,10 +249,12 @@ tmux attach-session -t "$TMUX_SESSION"
 ###############################################################################
 
 echo ""
-echo -e "${YELLOW}🛑 Parando todos os serviços...${NC}"
+echo -e "${YELLOW}🛑 Parando serviços em background (Edge + Sensores)...${NC}"
+echo -e "${YELLOW}   (Discovery e Datacenter já foram encerrados manualmente)${NC}"
 echo ""
 
-# Matar todos os processos salvos em PIDs
+# Matar APENAS processos em background (Edge e Sensores)
+# Discovery e Datacenter já foram encerrados pelo usuário com 'quit' ou Ctrl+C
 for pid_file in "$PID_DIR"/*.pid; do
     if [ -f "$pid_file" ]; then
         pid=$(cat "$pid_file")

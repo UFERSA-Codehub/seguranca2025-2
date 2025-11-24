@@ -15,3 +15,5 @@ mvnw.cmd
 .env
 .project
 *.db
+*.pid
+relatorio_*.*
