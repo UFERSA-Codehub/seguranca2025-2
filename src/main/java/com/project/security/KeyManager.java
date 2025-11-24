@@ -173,13 +173,24 @@ public class KeyManager {
 
     public static void limparSessoesExpiradas() {
         sessionKeys.entrySet().removeIf(entry -> {
-            
+
             boolean expired = entry.getValue().isExpired();
             if (expired && DebugConfig.DEBUG_MODE) {
                 System.out.println("[KeyManager]: Limpando sessão expirada: " + entry.getKey());
             }
             return expired;
         });
+    }
+
+    public static void registrarSessaoExterna(String idClient, SessionKeys keys) {
+        if (keys == null) {
+            throw new IllegalArgumentException("SessionKeys não pode ser nula");
+        }
+        sessionKeys.put(idClient, keys);
+        if (DebugConfig.DEBUG_MODE) {
+            System.out.println("[KeyManager]: Sessão externa registrada para ID: " + idClient);
+            System.out.println("[KeyManager]: Expira em: " + keys.getTempoRestante() + " segundos");
+        }
     }
 
     public static String diagnostico() {

@@ -29,6 +29,7 @@ public class Relatorio {
     // Texto gerado pela LLM
     private String conclusao;
     private List<String> recomendacoes;
+    private String htmlCompleto;
 
     private Relatorio(TipoRelatorio tipo, List<DadosAmbientais> dados) {
         this.id = "REL_" + System.currentTimeMillis();
@@ -121,11 +122,13 @@ public class Relatorio {
             contexto.alertasAmostra.add("[" + a.getNivelAlerta() + "] " + a.getMensagem());
         }
         
-        // Chamar LLM
+        // Chamar LLM para texto
         RelatorioLLM resultado = LLMService.gerarRelatorio(contexto);
-        
         this.conclusao = resultado.conclusao;
         this.recomendacoes = resultado.recomendacoes;
+        
+        // Chamar LLM para HTML
+        this.htmlCompleto = LLMService.gerarRelatorioHTML(contexto);
     }
 
     private double calcularIQA(double concentracao, String poluente) {
@@ -172,6 +175,7 @@ public class Relatorio {
     public List<Alerta> getAlertas() { return alertas; }
     public String getConclusao() { return conclusao; }
     public List<String> getRecomendacoes() { return recomendacoes; }
+    public String getHtmlCompleto() { return htmlCompleto; }
     public double getIqa() { return iqa; }
     public String getClassificacaoIQA() { return classificarIQA(iqa); }
     public double getMediaPm25() { return mediaPm25; }

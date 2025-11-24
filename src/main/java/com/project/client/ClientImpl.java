@@ -3,12 +3,11 @@ package com.project.client;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.project.discovery.ClienteDiscovery;
-import com.project.discovery.InfoServico;
+import com.project.discovery.DiscoveryClient;
+import com.project.discovery.ServiceInfo;
 import com.project.client.config.ClientConfig;
 import com.project.client.util.RetryHelper;
 import com.project.client.util.TokenCache;
-import com.project.client.util.SSLConfig;
 
 public class ClientImpl implements IClient {
 
@@ -18,21 +17,18 @@ public class ClientImpl implements IClient {
     private int datacenterPorta;
     private String token;
     private ClienteHTTP clienteHTTP;
-    private ClienteDiscovery clienteDiscovery;
+    private DiscoveryClient clienteDiscovery;
     private ClientConfig config;
     private RetryHelper retryHelper;
     private TokenCache tokenCache;
-    private SSLConfig sslConfig;
 
     public ClientImpl(ClientConfig config) {
         this.config = config;
-        this.config = config;
-        this.clienteDiscovery = new ClienteDiscovery(
+        this.clienteDiscovery = new DiscoveryClient(
             config.getDiscoveryHost(),
             config.getDiscoveryPort()
         );
 
-        // Inicializar retry helper
         if (config.isRetryEnabled()) {
             this.retryHelper = new RetryHelper(
                 config.getRetryMaxAttempts(),
@@ -45,7 +41,6 @@ public class ClientImpl implements IClient {
                 config.isRetryExponentialBackoff() ? " (exponencial)" : "");
         }
 
-        // Inicializar token cache
         if (config.isCacheEnabled()) {
             this.tokenCache = new TokenCache(
                 config.getCacheDirectory(),
@@ -56,26 +51,6 @@ public class ClientImpl implements IClient {
                 config.getCacheDirectory());
         }
 
-        // Inicializar SSL config
-        try {
-            if (config.isHttpsEnabled()) {
-                if (config.getHttpsTruststorePath() != null && !config.getHttpsTruststorePath().isEmpty()) {
-                    this.sslConfig = SSLConfig.createProductionConfig(
-                        config.getHttpsTruststorePath(),
-                        config.getHttpsTruststorePassword()
-                    );
-                } else {
-                    this.sslConfig = SSLConfig.createDevelopmentConfig();
-                }
-                logger.info("HTTPS habilitado com configuração SSL");
-            } else {
-                this.sslConfig = null;
-                logger.info("Usando HTTP (sem SSL)");
-            }
-        } catch (Exception e) {
-            logger.error("Erro ao inicializar SSL: {}", e.getMessage(), e);
-            this.sslConfig = null;
-        }
     }
     
     @Override
@@ -83,13 +58,11 @@ public class ClientImpl implements IClient {
         try {
             logger.info("Descobrindo Datacenter via Discovery Service...");
 
-            InfoServico info = clienteDiscovery.descobrirDatacenter();
+            ServiceInfo info = clienteDiscovery.descobrirDatacenter();
 
             if (info != null) {
                 this.datacenterHost = info.getHost();
-                // Discovery retorna porta TCP (8080), mas cliente precisa HTTP (9090)
-                // Offset fixo: HTTP = TCP + 1010
-                this.datacenterPorta = info.getPorta() + 1010; // 8080 + 1010 = 9090
+                this.datacenterPorta = info.getPorta() + 1010;
 
                 logger.info("Datacenter descoberto: host={}, portaTCP={}, portaHTTP={}",
                     datacenterHost, info.getPorta(), datacenterPorta);
@@ -121,7 +94,7 @@ public class ClientImpl implements IClient {
                 if (cachedToken != null) {
                     this.token = cachedToken;
                     this.clienteHTTP = new ClienteHTTP(getProtocol(), datacenterHost, datacenterPorta, token,
-                                                       config.getHttpConnectTimeout(), config.getHttpReadTimeout(), sslConfig);
+                                                       config.getHttpConnectTimeout(), config.getHttpReadTimeout());
                     logger.info("Autenticado usando token em cache");
                     return true;
                 }
@@ -141,8 +114,7 @@ public class ClientImpl implements IClient {
                                 usuario,
                                 senha,
                                 config.getHttpConnectTimeout(),
-                                config.getHttpReadTimeout(),
-                                sslConfig
+                                config.getHttpReadTimeout()
                             );
                         } catch (Exception e) {
                             throw new RuntimeException(e);
@@ -158,15 +130,14 @@ public class ClientImpl implements IClient {
                     usuario,
                     senha,
                     config.getHttpConnectTimeout(),
-                    config.getHttpReadTimeout(),
-                    sslConfig
+                    config.getHttpReadTimeout()
                 );
             }
 
             if (token != null && !token.isEmpty()) {
                 // Criar cliente HTTP com token
                 this.clienteHTTP = new ClienteHTTP(getProtocol(), datacenterHost, datacenterPorta, token,
-                                                   config.getHttpConnectTimeout(), config.getHttpReadTimeout(), sslConfig);
+                                                   config.getHttpConnectTimeout(), config.getHttpReadTimeout());
 
                 // Salvar token em cache (se habilitado)
                 if (tokenCache != null) {
@@ -347,8 +318,4 @@ public class ClientImpl implements IClient {
             logger.info("Cache não habilitado");
         }
     }
-
-    public String getDatacenterHost() { return datacenterHost; }
-    public int getDatacenterPorta() { return datacenterPorta; }
-    public String getToken() { return token; }
 }

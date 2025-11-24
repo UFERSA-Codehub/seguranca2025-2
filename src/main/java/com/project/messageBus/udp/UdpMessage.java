@@ -15,6 +15,8 @@ public class UdpMessage extends Message implements SecureMessage {
     private String sensorId;
     private String credenciais;
     private DadosAmbientais dados;
+    private String publicKeyBase64;
+    private byte[] encryptedSessionKeys;
 
     public UdpMessage(MessageType tipo, String sensorId, String credenciais, DadosAmbientais dados) {
         super(tipo);
@@ -58,9 +60,62 @@ public class UdpMessage extends Message implements SecureMessage {
         return dados;
     }
 
-    private String serializeToString() {
+    public String getPublicKeyBase64() {
+        return publicKeyBase64;
+    }
+
+    public byte[] getEncryptedSessionKeys() {
+        return encryptedSessionKeys;
+    }
+
+    public static UdpMessage createHello(String sensorId, String senha) {
+        UdpMessage msg = new UdpMessage(MessageType.SENSOR_HELLO, sensorId, senha, null);
+        return msg;
+    }
+
+    public static UdpMessage createChallenge(String edgeId, String publicKeyBase64) {
+        UdpMessage msg = new UdpMessage(MessageType.SENSOR_CHALLENGE, edgeId, null, null);
+        msg.publicKeyBase64 = publicKeyBase64;
+        return msg;
+    }
+
+    public static UdpMessage createKeyExchange(String sensorId, byte[] encryptedSessionKeys) {
+        UdpMessage msg = new UdpMessage(MessageType.SENSOR_KEY_EXCHANGE, sensorId, null, null);
+        msg.encryptedSessionKeys = encryptedSessionKeys;
+        return msg;
+    }
+
+    public String serializeToString() {
+        if (type == MessageType.SENSOR_HELLO) {
+            return String.format("%s||%s||%s||%d",
+                type.name(),
+                sensorId,
+                credenciais != null ? credenciais : "",
+                timestamp
+            );
+        }
+
+        if (type == MessageType.SENSOR_CHALLENGE) {
+            return String.format("%s||%s||%s||%d",
+                type.name(),
+                sensorId,
+                publicKeyBase64 != null ? publicKeyBase64 : "",
+                timestamp
+            );
+        }
+
+        if (type == MessageType.SENSOR_KEY_EXCHANGE) {
+            String encodedKeys = encryptedSessionKeys != null ?
+                java.util.Base64.getEncoder().encodeToString(encryptedSessionKeys) : "";
+            return String.format("%s||%s||%s||%d",
+                type.name(),
+                sensorId,
+                encodedKeys,
+                timestamp
+            );
+        }
+
         if (dados == null) {
-            // Formato para mensagens sem dados (autenticação)
             return String.format("%s||%s||%s||%d",
                 type.name(),
                 sensorId,
@@ -101,12 +156,30 @@ public class UdpMessage extends Message implements SecureMessage {
             
             MessageType tipo = MessageType.valueOf(parts[0]);
             String sensorId = parts[1];
-            String credenciais = parts[2];
+            String campo2 = parts[2];
             long timestamp = Long.parseLong(parts[3]);
-            
-            // Se for mensagem de autenticação (sem dados ambientais)
+
+            if (tipo == MessageType.SENSOR_HELLO) {
+                UdpMessage msg = createHello(sensorId, campo2);
+                msg.timestamp = timestamp;
+                return msg;
+            }
+
+            if (tipo == MessageType.SENSOR_CHALLENGE) {
+                UdpMessage msg = createChallenge(sensorId, campo2);
+                msg.timestamp = timestamp;
+                return msg;
+            }
+
+            if (tipo == MessageType.SENSOR_KEY_EXCHANGE) {
+                byte[] encrypted = java.util.Base64.getDecoder().decode(campo2);
+                UdpMessage msg = createKeyExchange(sensorId, encrypted);
+                msg.timestamp = timestamp;
+                return msg;
+            }
+
             if (tipo.isSensorAuth()) {
-                return new UdpMessage(tipo, sensorId, credenciais, null, timestamp);
+                return new UdpMessage(tipo, sensorId, campo2, null, timestamp);
             }
             
             // Para mensagens com dados ambientais
@@ -128,11 +201,11 @@ public class UdpMessage extends Message implements SecureMessage {
                 umidade, ruido, radiacao_uv, pm25, pm10
             );
             
-            return new UdpMessage(tipo, sensorId, credenciais, dados, timestamp);
+            return new UdpMessage(tipo, sensorId, campo2, dados, timestamp);
             
         } catch (Exception e) {
-            System.err.println("[UdpMessage] Erro ao deserializar: " + e.getMessage());
-            e.printStackTrace();
+            //System.err.println("[UdpMessage] Erro ao deserializar: " + e.getMessage());
+            //e.printStackTrace();
             return null;
         }
     }

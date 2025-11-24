@@ -65,16 +65,4 @@ public class RetryHelper {
         // Exponential backoff: delay * (2 ^ (attempt - 1))
         return initialDelayMs * (1L << (attempt - 1));
     }
-
-    public int getMaxAttempts() {
-        return maxAttempts;
-    }
-
-    public long getInitialDelayMs() {
-        return initialDelayMs;
-    }
-
-    public boolean isExponentialBackoff() {
-        return exponentialBackoff;
-    }
 }

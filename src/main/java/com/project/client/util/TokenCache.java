@@ -88,9 +88,4 @@ public class TokenCache {
             logger.warn("Erro ao limpar cache: {}", e.getMessage());
         }
     }
-
-    public boolean existe() {
-        Path tokenPath = Paths.get(cacheDirectory, TOKEN_FILENAME);
-        return Files.exists(tokenPath);
-    }
 }

@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import com.project.client.util.SSLConfig;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -15,7 +14,6 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
-import javax.net.ssl.HttpsURLConnection;
 
 public class ClienteHTTP {
 
@@ -25,27 +23,20 @@ public class ClienteHTTP {
     private String token;
     private int connectTimeout; // Timeout para estabelecer conexão
     private int readTimeout;    // Timeout para ler resposta
-    private SSLConfig sslConfig; // Configuração SSL para HTTPS
     private static final Gson gson = new Gson();
 
-    public ClienteHTTP(String protocol, String host, int porta, String token, int connectTimeout, int readTimeout, SSLConfig sslConfig) {
+    public ClienteHTTP(String protocol, String host, int porta, String token, int connectTimeout, int readTimeout) {
         this.urlBase = protocol + "://" + host + ":" + porta + "/api";
         this.token = token;
         this.connectTimeout = connectTimeout;
         this.readTimeout = readTimeout;
-        this.sslConfig = sslConfig;
     }
 
     public static String autenticar(String protocol, String host, int porta, String usuario, String senha,
-                                      int connectTimeout, int readTimeout, SSLConfig sslConfig) throws Exception {
+                                      int connectTimeout, int readTimeout) throws Exception {
         String urlStr = protocol + "://" + host + ":" + porta + "/api/login";
         URL url = URI.create(urlStr).toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-
-        // Configurar SSL se for HTTPS
-        if (conn instanceof HttpsURLConnection && sslConfig != null) {
-            sslConfig.configureHttpsURLConnection((HttpsURLConnection) conn);
-        }
 
         try {
             conn.setRequestMethod("POST");
@@ -114,11 +105,6 @@ public class ClienteHTTP {
         URL url = URI.create(urlStr).toURL();
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
-        // Configurar SSL se for HTTPS
-        if (conn instanceof HttpsURLConnection && sslConfig != null) {
-            sslConfig.configureHttpsURLConnection((HttpsURLConnection) conn);
-        }
-
         try {
             conn.setRequestMethod("GET");
             conn.setRequestProperty("Authorization", "Bearer " + token);
@@ -169,17 +155,6 @@ public class ClienteHTTP {
             return response.toString();
         } catch (Exception e) {
             return "Erro desconhecido";
-        }
-    }
-
-    public static String formatarJSON(String json) {
-        try {
-            Gson prettyGson = new com.google.gson.GsonBuilder().setPrettyPrinting().create();
-            Object jsonObject = gson.fromJson(json, Object.class);
-            return prettyGson.toJson(jsonObject);
-        } catch (Exception e) {
-            // Se falhar parsing, retornar original
-            return json;
         }
     }
 
@@ -234,8 +209,4 @@ public class ClienteHTTP {
             logger.error("Erro ao inspecionar token: {}", e.getMessage(), e);
         }
     }
-    
-    // Getters
-    public String getUrlBase() { return urlBase; }
-    public String getToken() { return token; }
 }

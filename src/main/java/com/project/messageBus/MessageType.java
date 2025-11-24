@@ -13,7 +13,13 @@ public enum MessageType {
     SENSOR_AUTH_SUCCESS,
     
     SENSOR_AUTH_FAILED,
-    
+
+    SENSOR_HELLO,
+
+    SENSOR_CHALLENGE,
+
+    SENSOR_KEY_EXCHANGE,
+
     // ========== TCP Handshake (Edge ↔ Datacenter) ==========
     
     TCP_HELLO,
@@ -59,9 +65,12 @@ public enum MessageType {
     }
     
     public boolean isSensorAuth() {
-        return this == SENSOR_AUTH_REQUEST || 
-               this == SENSOR_AUTH_SUCCESS || 
-               this == SENSOR_AUTH_FAILED;
+        return this == SENSOR_AUTH_REQUEST ||
+               this == SENSOR_AUTH_SUCCESS ||
+               this == SENSOR_AUTH_FAILED ||
+               this == SENSOR_HELLO ||
+               this == SENSOR_CHALLENGE ||
+               this == SENSOR_KEY_EXCHANGE;
     }
 
     public boolean isTcpHandshake() {

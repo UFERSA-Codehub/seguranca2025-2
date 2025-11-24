@@ -1,11 +1,19 @@
 package com.project.client;
 
 import com.project.client.config.ClientConfig;
+import com.google.gson.*;
+import java.awt.Desktop;
+import java.io.File;
+import java.io.FileWriter;
+import java.net.URI;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 import java.util.Scanner;
 
 public class ClienteApp {
 
+    private static final Gson gson = new Gson();
     private ClientImpl client;
     private Scanner scanner;
     private boolean executando;
@@ -33,7 +41,7 @@ public class ClienteApp {
 
     private void exibirBanner() {
         System.out.println("╔═══════════════════════════════════════════════════════════════════╗");
-        System.out.println("║        SISTEMA DE MONITORAMENTO AMBIENTAL - CLIENTE              ║");
+        System.out.println("║        SISTEMA DE MONITORAMENTO AMBIENTAL - CLIENTE               ║");
         System.out.println("║                    Modo Interativo                                ║");
         System.out.println("╚═══════════════════════════════════════════════════════════════════╝");
         System.out.println();
@@ -54,21 +62,21 @@ public class ClienteApp {
         
         System.out.println("╠═══════════════════════════════════════════════════════════════════╣");
         System.out.println("║  CONFIGURAÇÃO                                                     ║");
-        System.out.println("║    1. Descobrir Datacenter via Discovery Service                 ║");
-        System.out.println("║    2. Autenticar (Login com JWT)                                 ║");
-        System.out.println("║    3. Consultar Status do Servidor                               ║");
+        System.out.println("║    1. Descobrir Datacenter via Discovery Service                  ║");
+        System.out.println("║    2. Autenticar (Login com JWT)                                  ║");
+        System.out.println("║    3. Consultar Status do Servidor                                ║");
         System.out.println("║                                                                   ║");
         System.out.println("║  RELATÓRIOS AMBIENTAIS                                            ║");
-        System.out.println("║    4. 🌍 Índice de Qualidade do Ar (IQA)                         ║");
-        System.out.println("║    5. 📈 Tendências de Poluição                                  ║");
-        System.out.println("║    6. 🌡️  Análise de Microclima                                  ║");
-        System.out.println("║    7. 🌊 Alertas de Enchente                                     ║");
-        System.out.println("║    8. 🚦 Recomendações de Tráfego                                ║");
+        System.out.println("║    4. 🌍 Índice de Qualidade do Ar (IQA)                          ║");
+        System.out.println("║    5. 📈 Tendências de Poluição                                   ║");
+        System.out.println("║    6. 🌡️  Análise de Microclima                                   ║");
+        System.out.println("║    7. 🌊 Alertas de Enchente                                      ║");
+        System.out.println("║    8. 🚦 Recomendações de Tráfego                                 ║");
         System.out.println("║                                                                   ║");
         System.out.println("║  FERRAMENTAS                                                      ║");
-        System.out.println("║    9. 🔍 Inspecionar Token JWT                                   ║");
-        System.out.println("║    10. 📋 Mostrar Credenciais Disponíveis                        ║");
-        System.out.println("║    11. 🗑️  Limpar Cache de Token                                 ║");
+        System.out.println("║    9. 🔍 Inspecionar Token JWT                                    ║");
+        System.out.println("║    10. 📋 Mostrar Credenciais Disponíveis                         ║");
+        System.out.println("║    11. 🗑️  Limpar Cache de Token                                  ║");
         System.out.println("║                                                                   ║");
         System.out.println("║    0. Sair                                                        ║");
         System.out.println("╚═══════════════════════════════════════════════════════════════════╝");
@@ -413,20 +421,59 @@ public class ClienteApp {
         System.out.println("║                   RELATÓRIO DE QUALIDADE DO AR                    ║");
         System.out.println("╚═══════════════════════════════════════════════════════════════════╝\n");
         
-        // Extrair campos principais
-        String iqa = ClienteHTTP.extrairCampo(json, "iqa");
-        String classificacao = ClienteHTTP.extrairCampo(json, "classificacao");
-        
-        if (iqa != null && classificacao != null) {
-            System.out.println("  📊 IQA:           " + iqa + " (" + classificacao + ")");
-        }
-        
-        // Exibir JSON completo formatado
-        System.out.println("\n  📄 Detalhes completos:");
-        System.out.println("  ─────────────────────────────────────────────────────────────");
-        String[] linhas = json.split(",");
-        for (String linha : linhas) {
-            System.out.println("  " + linha.trim());
+        try {
+            JsonObject obj = gson.fromJson(json, JsonObject.class);
+            
+            String id = obj.has("id") ? obj.get("id").getAsString() : "N/A";
+            String tipo = obj.has("tipo") ? obj.get("tipo").getAsString() : "N/A";
+            double iqa = obj.has("iqa") ? obj.get("iqa").getAsDouble() : 0;
+            String classificacao = obj.has("classificacaoIQA") ? obj.get("classificacaoIQA").getAsString() : "N/A";
+            
+            System.out.println("  📋 ID:            " + id);
+            System.out.println("  📊 Tipo:          " + tipo);
+            System.out.println("  🌍 IQA:           " + String.format("%.0f", iqa) + " (" + classificacao + ")");
+            
+            if (obj.has("mediaPm25")) {
+                System.out.println("\n  🔬 MÉTRICAS AMBIENTAIS:");
+                System.out.println("     PM2.5:         " + String.format("%.1f µg/m³", obj.get("mediaPm25").getAsDouble()));
+                System.out.println("     PM10:          " + String.format("%.1f µg/m³", obj.get("mediaPm10").getAsDouble()));
+                System.out.println("     CO2:           " + String.format("%.0f ppm", obj.get("mediaCo2").getAsDouble()));
+                System.out.println("     Temperatura:   " + String.format("%.1f°C", obj.get("mediaTemperatura").getAsDouble()));
+                System.out.println("     Umidade:       " + String.format("%.1f%%", obj.get("mediaUmidade").getAsDouble()));
+                System.out.println("     Ruído:         " + String.format("%.1f dB", obj.get("mediaRuido").getAsDouble()));
+                System.out.println("     UV:            " + String.format("%.1f", obj.get("mediaUV").getAsDouble()));
+            }
+            
+            if (obj.has("conclusao")) {
+                System.out.println("\n  📝 CONCLUSÃO:");
+                String conclusao = obj.get("conclusao").getAsString();
+                imprimirTextoQuebrado(conclusao, 60, "     ");
+            }
+            
+            if (obj.has("recomendacoes")) {
+                System.out.println("\n  💡 RECOMENDAÇÕES:");
+                JsonArray recs = obj.getAsJsonArray("recomendacoes");
+                for (int i = 0; i < recs.size(); i++) {
+                    String rec = recs.get(i).getAsString();
+                    System.out.println("     " + (i + 1) + ". " + rec);
+                }
+            }
+            
+            if (obj.has("alertas")) {
+                JsonArray alertas = obj.getAsJsonArray("alertas");
+                System.out.println("\n  ⚠️  ALERTAS:       " + alertas.size() + " detectados");
+            }
+            
+            String arquivo = salvarRelatorioHTML(json);
+            if (arquivo != null) {
+                System.out.println("\n  ✅ Relatório HTML salvo: " + arquivo);
+                System.out.println("  🌐 Abrindo no navegador...");
+            }
+            
+        } catch (Exception e) {
+            System.err.println("❌ Erro ao processar relatório: " + e.getMessage());
+            System.out.println("\n  📄 JSON bruto:");
+            System.out.println("  " + json);
         }
     }
 
@@ -435,29 +482,60 @@ public class ClienteApp {
         System.out.println("║  " + formatarTexto(titulo, 64) + " ║");
         System.out.println("╚═══════════════════════════════════════════════════════════════════╝\n");
         
-        // Extrair campos principais
-        String iqa = ClienteHTTP.extrairCampo(json, "iqa");
-        String classificacao = ClienteHTTP.extrairCampo(json, "classificacao");
-        String tipo = ClienteHTTP.extrairCampo(json, "tipo");
-        
-        if (tipo != null) {
-            System.out.println("  📋 Tipo:          " + tipo);
+        try {
+            JsonObject obj = gson.fromJson(json, JsonObject.class);
+            
+            String id = obj.has("id") ? obj.get("id").getAsString() : "N/A";
+            String tipo = obj.has("tipo") ? obj.get("tipo").getAsString() : "N/A";
+            double iqa = obj.has("iqa") ? obj.get("iqa").getAsDouble() : 0;
+            String classificacao = obj.has("classificacaoIQA") ? obj.get("classificacaoIQA").getAsString() : "N/A";
+            
+            System.out.println("  📋 ID:            " + id);
+            System.out.println("  📊 Tipo:          " + tipo);
+            System.out.println("  🌍 IQA:           " + String.format("%.0f", iqa) + " (" + classificacao + ")");
+            
+            if (obj.has("mediaPm25")) {
+                System.out.println("\n  🔬 MÉTRICAS AMBIENTAIS:");
+                System.out.println("     PM2.5:         " + String.format("%.1f µg/m³", obj.get("mediaPm25").getAsDouble()));
+                System.out.println("     PM10:          " + String.format("%.1f µg/m³", obj.get("mediaPm10").getAsDouble()));
+                System.out.println("     CO2:           " + String.format("%.0f ppm", obj.get("mediaCo2").getAsDouble()));
+                System.out.println("     Temperatura:   " + String.format("%.1f°C", obj.get("mediaTemperatura").getAsDouble()));
+                System.out.println("     Umidade:       " + String.format("%.1f%%", obj.get("mediaUmidade").getAsDouble()));
+                System.out.println("     Ruído:         " + String.format("%.1f dB", obj.get("mediaRuido").getAsDouble()));
+                System.out.println("     UV:            " + String.format("%.1f", obj.get("mediaUV").getAsDouble()));
+            }
+            
+            if (obj.has("conclusao")) {
+                System.out.println("\n  📝 CONCLUSÃO:");
+                String conclusao = obj.get("conclusao").getAsString();
+                imprimirTextoQuebrado(conclusao, 60, "     ");
+            }
+            
+            if (obj.has("recomendacoes")) {
+                System.out.println("\n  💡 RECOMENDAÇÕES:");
+                JsonArray recs = obj.getAsJsonArray("recomendacoes");
+                for (int i = 0; i < recs.size(); i++) {
+                    String rec = recs.get(i).getAsString();
+                    System.out.println("     " + (i + 1) + ". " + rec);
+                }
+            }
+            
+            if (obj.has("alertas")) {
+                JsonArray alertas = obj.getAsJsonArray("alertas");
+                System.out.println("\n  ⚠️  ALERTAS:       " + alertas.size() + " detectados");
+            }
+            
+            String arquivo = salvarRelatorioHTML(json);
+            if (arquivo != null) {
+                System.out.println("\n  ✅ Relatório HTML salvo: " + arquivo);
+                System.out.println("  🌐 Abrindo no navegador...");
+            }
+            
+        } catch (Exception e) {
+            System.err.println("❌ Erro ao processar relatório: " + e.getMessage());
+            System.out.println("\n  📄 JSON bruto:");
+            System.out.println("  " + json);
         }
-        if (iqa != null) {
-            System.out.println("  📊 IQA:           " + iqa + (classificacao != null ? " (" + classificacao + ")" : ""));
-        }
-        
-        // Exibir JSON formatado
-        System.out.println("\n  📄 Dados completos:");
-        System.out.println("  ─────────────────────────────────────────────────────────────");
-        
-        // Formatação básica do JSON
-        String jsonFormatado = json
-            .replace("{", "{\n  ")
-            .replace("}", "\n}")
-            .replace(",", ",\n  ");
-        
-        System.out.println("  " + jsonFormatado.replace("\n", "\n  "));
     }
 
     private void tratarErroConsulta(Exception e) {
@@ -499,6 +577,60 @@ public class ClienteApp {
             System.out.println("💡 No próximo login, um novo token será obtido do servidor.");
         } else {
             System.out.println("\n❌ Operação cancelada.");
+        }
+    }
+
+    private String salvarRelatorioHTML(String json) {
+        try {
+            JsonObject obj = gson.fromJson(json, JsonObject.class);
+            
+            if (!obj.has("htmlCompleto")) {
+                System.out.println("  ⚠️  HTML não disponível neste relatório");
+                return null;
+            }
+            
+            String html = obj.get("htmlCompleto").getAsString();
+            String id = obj.has("id") ? obj.get("id").getAsString() : "RELATORIO";
+            String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+            String nomeArquivo = "relatorio_" + id + "_" + timestamp + ".html";
+            
+            File diretorio = new File("relatorios");
+            if (!diretorio.exists()) {
+                diretorio.mkdirs();
+            }
+            
+            File arquivo = new File(diretorio, nomeArquivo);
+            
+            try (FileWriter writer = new FileWriter(arquivo)) {
+                writer.write(html);
+            }
+            
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().browse(arquivo.toURI());
+            }
+            
+            return arquivo.getPath();
+            
+        } catch (Exception e) {
+            System.err.println("  ❌ Erro ao salvar HTML: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private void imprimirTextoQuebrado(String texto, int larguraMax, String prefixo) {
+        String[] palavras = texto.split(" ");
+        StringBuilder linha = new StringBuilder();
+        
+        for (String palavra : palavras) {
+            if (linha.length() + palavra.length() + 1 > larguraMax) {
+                System.out.println(prefixo + linha.toString().trim());
+                linha = new StringBuilder();
+            }
+            linha.append(palavra).append(" ");
+        }
+        
+        if (linha.length() > 0) {
+            System.out.println(prefixo + linha.toString().trim());
         }
     }
 
