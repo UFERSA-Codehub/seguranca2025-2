@@ -1,4 +1,4 @@
-package com.project.edge;
+package com.project.server.edge;
 
 import com.project.messageBus.udp.UdpMessage;
 import com.project.messageBus.tcp.TcpDataMessage;
@@ -8,14 +8,16 @@ import com.project.model.DadosAmbientais;
 import com.project.security.DebugConfig;
 import com.project.security.KeyManager;
 import com.project.security.SessionKeys;
+import com.project.security.RSA;
+import com.project.server.AbstractServer;
+import com.project.server.config.EdgeConfig;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.util.*;
+import java.util.Base64;
 
-public class EdgeServer implements Runnable {
-    private int porta;                          // Porta UDP para receber dados dos sensores
+public class EdgeServer extends AbstractServer implements Runnable {
     private DatagramSocket socket;              // Socket UDP
-    private boolean executando;                 // Flag de controle
     private GestorAutenticacao autenticacao;    // Gestor de autenticação
     private CacheDados cache;                   // Cache local de dados
     private Thread thread;                      // Thread de execução (UDP)
@@ -23,6 +25,11 @@ public class EdgeServer implements Runnable {
     private long totalMensagensRecebidas;       // Contador de mensagens
     private long totalMensagensValidas;         // Contador de mensagens válidas
     private long totalMensagensInvalidas;       // Contador de mensagens inválidas
+    
+    // ======= RSA Handshake =======
+    private RSA rsa;                            // Instância RSA para handshake
+    private Map<String, SessionKeys> sessoesHandshake; // sensorId -> SessionKeys temporárias
+    private Map<String, String> senhasValidadas;       // sensorId -> senha validada no HELLO
     
     // ======= TCP / Datacenter Integration =======
     private ClienteTCP clienteTCP;              // Cliente TCP para Datacenter
@@ -34,18 +41,33 @@ public class EdgeServer implements Runnable {
     private long totalBatchesEnviados;          // Contador de batches enviados
 
     public EdgeServer(int porta) {
-        this(porta, null, 0, "EDGE_" + System.currentTimeMillis(), 30000, 50);
+        this(porta, null, 0, "EDGE_" + System.currentTimeMillis(), 30000, 50, 1000);
+    }
+    
+    public EdgeServer(EdgeConfig config) {
+        this(config.getPorta(), null, 0, config.getEdgeId(), 
+             config.getIntervaloEnvioBatch(), config.getTamanhoBatch(), config.getCapacidadeCache());
     }
 
     public EdgeServer(int porta, String datacenterHost, int datacenterPorta, 
                       String edgeId, int intervaloEnvioBatch, int tamanhoBatch) {
-        this.porta = porta;
-        this.executando = false;
+        this(porta, datacenterHost, datacenterPorta, edgeId, intervaloEnvioBatch, tamanhoBatch, 1000);
+    }
+    
+    private EdgeServer(int porta, String datacenterHost, int datacenterPorta, 
+                      String edgeId, int intervaloEnvioBatch, int tamanhoBatch, int capacidadeCache) {
+        super("EdgeServer", porta);
         this.autenticacao = new GestorAutenticacao();
-        this.cache = new CacheDados(1000);
+        this.cache = new CacheDados(capacidadeCache);
         this.totalMensagensRecebidas = 0;
         this.totalMensagensValidas = 0;
         this.totalMensagensInvalidas = 0;
+        
+        // Configuração RSA para handshake
+        this.rsa = new RSA();
+        this.rsa.gerarParDeChaves();
+        this.sessoesHandshake = new HashMap<>();
+        this.senhasValidadas = new HashMap<>();
         
         // Configuração TCP
         this.datacenterHost = datacenterHost;
@@ -59,6 +81,16 @@ public class EdgeServer implements Runnable {
         if (datacenterHost != null && datacenterPorta > 0) {
             this.clienteTCP = new ClienteTCP(datacenterHost, datacenterPorta, edgeId);
         }
+    }
+    
+    @Override
+    protected boolean registrarNoDiscovery() {
+        return autoRegistrarNoDiscovery("EDGE");
+    }
+    
+    @Override
+    public void exibirStatus() {
+        exibirEstatisticas();
     }
 
     public void iniciar() {
@@ -277,60 +309,45 @@ public class EdgeServer implements Runnable {
         System.out.println("[EdgeServer] Loop de recepção encerrado.");
     }
 
-    private void processarMensagem(byte[] dadosCifrados, String origem) {
+    private void processarMensagem(byte[] dados, String origem) {
         try {
-            // Obter chaves de sessão do KeyManager
-            SessionKeys keys = new SessionKeys(
-                "EDGE_SERVER",
-                KeyManager.getAESKey(),
-                KeyManager.getHMACKey(),
-                System.currentTimeMillis(),
-                System.currentTimeMillis() + (24 * 60 * 60 * 1000) // 24 horas
-            );
+            // Tentar deserializar como plaintext primeiro (para mensagens de handshake)
+            String dadosString = new String(dados, java.nio.charset.StandardCharsets.UTF_8);
+            UdpMessage mensagemPlain = UdpMessage.deserializeFromString(dadosString);
             
-            // Decifrar mensagem (dadosCifrados já é byte[])
-            UdpMessage mensagem = UdpMessage.decryptMessage(dadosCifrados, keys);
-
-            if (mensagem == null) {
-                totalMensagensInvalidas++;
-                System.err.println("[EdgeServer] ❌ Mensagem inválida de " + origem + " (HMAC/Decriptação falhou)");
+            // SENSOR_HELLO: não criptografado (passo 1 do handshake)
+            if (mensagemPlain != null && mensagemPlain.getType() == MessageType.SENSOR_HELLO) {
+                processarHello(mensagemPlain, origem);
                 return;
             }
-
-            // Verificar se é mensagem de autenticação (requisição de JWT)
-            if (mensagem.getType() == MessageType.SENSOR_AUTH_REQUEST) {
-                processarAutenticacao(mensagem, origem, keys);
+            
+            // SENSOR_KEY_EXCHANGE: plaintext com SessionKeys criptografadas com RSA (passo 3 do handshake)
+            if (mensagemPlain != null && mensagemPlain.getType() == MessageType.SENSOR_KEY_EXCHANGE) {
+                processarKeyExchange(mensagemPlain, origem);
                 return;
             }
-
-            // Para mensagens de dados, validar JWT
-            boolean autenticado = autenticacao.autenticarComJWT(mensagem.getSensorId(), mensagem.getCredenciais());
-
-            if (!autenticado) {
-                totalMensagensInvalidas++;
-                System.err.println("[EdgeServer] 🚫 Autenticação JWT falhou: " + mensagem.getSensorId() + " de " + origem);
-                return;
+            
+            // Mensagens de dados: criptografadas com SessionKeys de handshake
+            // Tentar decifrar com cada sessão ativa
+            for (Map.Entry<String, SessionKeys> entry : sessoesHandshake.entrySet()) {
+                try {
+                    SessionKeys sessionKeys = entry.getValue();
+                    UdpMessage mensagem = UdpMessage.decryptMessage(dados, sessionKeys);
+                    
+                    if (mensagem != null) {
+                        processarMensagemComSessao(mensagem, origem, sessionKeys);
+                        return;
+                    }
+                } catch (Exception e) {
+                    // HMAC inválido ou chave errada - tentar próxima sessão
+                    continue;
+                }
             }
-
-            totalMensagensValidas++;
-
-            if (mensagem.getType() == MessageType.SENSOR_REGISTER) {
-                System.out.println("[EdgeServer] ✅ REGISTER: " + mensagem.getSensorId() + " de " + origem);
-            }
-
-            cache.adicionarLeitura(mensagem.getSensorId(), mensagem.getDados());
-
-            analisarDados(mensagem.getSensorId(), mensagem.getDados());
-
-            if (DebugConfig.DEBUG_MODE) {
-                System.out.printf("[EdgeServer] 📊 %s: Temp=%.1f°C, CO2=%.0f ppm, PM2.5=%.1f µg/m³%n",
-                    mensagem.getSensorId(),
-                    mensagem.getDados().getTemperatura(),
-                    mensagem.getDados().getCo2(),
-                    mensagem.getDados().getPm25()
-                );
-            }
-
+            
+            // Nenhuma decodificação funcionou
+            totalMensagensInvalidas++;
+            System.err.println("[EdgeServer] ❌ Mensagem inválida de " + origem + " (HMAC/Decriptação falhou ou sensor não autenticado)");
+            
         } catch (Exception e) {
             totalMensagensInvalidas++;
             System.err.println("[EdgeServer] ❌ Erro ao processar mensagem: " + e.getMessage());
@@ -339,33 +356,189 @@ public class EdgeServer implements Runnable {
             }
         }
     }
-
-    private void processarAutenticacao(UdpMessage mensagem, String origem, SessionKeys keys) {
+    
+    /**
+     * Processar SENSOR_HELLO (passo 1 do handshake)
+     * Recebe: sensorId + senha (plaintext)
+     * Valida credenciais e envia SENSOR_CHALLENGE com chave pública RSA
+     */
+    private void processarHello(UdpMessage mensagem, String origem) {
         String sensorId = mensagem.getSensorId();
         String senha = mensagem.getCredenciais();
         
         if (DebugConfig.DEBUG_MODE) {
-            System.out.println("[EdgeServer] 🔐 Requisição de autenticação de: " + sensorId + " de " + origem);
+            System.out.println("[EdgeServer] 🤝 HELLO recebido de: " + sensorId + " (" + origem + ")");
         }
         
-        // Gerar JWT usando GestorAutenticacao
-        String jwt = autenticacao.registrarESensorEObterJWT(sensorId, senha);
-        
-        if (jwt == null) {
+        // Validar credenciais
+        if (!autenticacao.validarCredenciais(sensorId, senha)) {
             totalMensagensInvalidas++;
-            System.err.println("[EdgeServer] ❌ Autenticação falhou: " + sensorId + " de " + origem);
-            enviarRespostaAuth(origem, MessageType.SENSOR_AUTH_FAILED, null, keys);
+            System.err.println("[EdgeServer] ❌ Credenciais inválidas: " + sensorId);
             return;
         }
         
-        totalMensagensValidas++;
-        System.out.println("[EdgeServer] ✅ JWT gerado para sensor: " + sensorId + " de " + origem);
-        enviarRespostaAuth(origem, MessageType.SENSOR_AUTH_SUCCESS, jwt, keys);
+        // Guardar senha validada no cache para uso posterior no KEY_EXCHANGE
+        senhasValidadas.put(sensorId, senha);
+        
+        if (DebugConfig.DEBUG_MODE) {
+            System.out.println("[EdgeServer] ✅ Credenciais validadas e senha armazenada: " + sensorId);
+        }
+        
+        // Enviar SENSOR_CHALLENGE com chave pública RSA
+        String publicKeyBase64 = Base64.getEncoder().encodeToString(rsa.getChavePublica().getEncoded());
+        UdpMessage challenge = UdpMessage.createChallenge(edgeId, publicKeyBase64);
+        
+        enviarMensagemPlaintext(challenge, origem);
+        
+        if (DebugConfig.DEBUG_MODE) {
+            System.out.println("[EdgeServer] 📤 CHALLENGE enviado para: " + sensorId);
+        }
     }
-
-    private void enviarRespostaAuth(String destino, MessageType tipoResposta, String jwt, SessionKeys keys) {
+    
+    /**
+     * Processar SENSOR_KEY_EXCHANGE (passo 3 do handshake)
+     * Recebe: SessionKeys criptografadas com chave pública RSA
+     * Decripta com chave privada, registra sessão e envia SENSOR_AUTH_SUCCESS com JWT
+     */
+    private void processarKeyExchange(UdpMessage mensagem, String origem) {
+        String sensorId = mensagem.getSensorId();
+        byte[] encryptedKeysBytes = mensagem.getEncryptedSessionKeys();
+        
+        if (DebugConfig.DEBUG_MODE) {
+            System.out.println("[EdgeServer] 🔑 KEY_EXCHANGE recebido de: " + sensorId + " (" + origem + ")");
+        }
+        
         try {
-            // Parsear endereço (formato: "IP:porta")
+            // Decifrar SessionKeys com chave privada RSA
+            byte[] decryptedKeys = rsa.decifrar(encryptedKeysBytes);
+            
+            if (decryptedKeys == null) {
+                System.err.println("[EdgeServer] ❌ Erro ao decifrar SessionKeys de: " + sensorId);
+                totalMensagensInvalidas++;
+                return;
+            }
+            
+            String keysJson = new String(decryptedKeys, java.nio.charset.StandardCharsets.UTF_8);
+            
+            // Parse JSON: formato "aesKey||hmacKey"
+            String[] parts = keysJson.split("\\|\\|");
+            if (parts.length != 2) {
+                System.err.println("[EdgeServer] ❌ Formato de SessionKeys inválido de: " + sensorId);
+                totalMensagensInvalidas++;
+                return;
+            }
+            
+            byte[] aesKeyBytes = Base64.getDecoder().decode(parts[0]);
+            byte[] hmacKeyBytes = Base64.getDecoder().decode(parts[1]);
+            
+            // Criar SecretKey a partir dos bytes
+            javax.crypto.SecretKey aesKey = new javax.crypto.spec.SecretKeySpec(aesKeyBytes, "AES");
+            javax.crypto.SecretKey hmacKey = new javax.crypto.spec.SecretKeySpec(hmacKeyBytes, "HmacSHA256");
+            
+            // Criar SessionKeys
+            SessionKeys sessionKeys = new SessionKeys(
+                sensorId,
+                aesKey,
+                hmacKey,
+                System.currentTimeMillis(),
+                System.currentTimeMillis() + (30 * 60 * 1000) // 30 min
+            );
+            
+            // Registrar no KeyManager e no mapa local
+            KeyManager.registrarSessaoExterna(sensorId, sessionKeys);
+            sessoesHandshake.put(sensorId, sessionKeys);
+            
+            // Obter senha validada do cache (armazenada no HELLO)
+            String senhaValidada = senhasValidadas.get(sensorId);
+            
+            if (senhaValidada == null) {
+                System.err.println("[EdgeServer] ❌ Senha não encontrada no cache para: " + sensorId);
+                System.err.println("[EdgeServer] ⚠️  Sensor deve enviar HELLO antes de KEY_EXCHANGE");
+                totalMensagensInvalidas++;
+                return;
+            }
+            
+            // Gerar JWT com senha real validada no HELLO
+            String jwt = autenticacao.registrarESensorEObterJWT(sensorId, senhaValidada);
+            
+            if (jwt == null) {
+                System.err.println("[EdgeServer] ❌ Erro ao gerar JWT para: " + sensorId);
+                totalMensagensInvalidas++;
+                return;
+            }
+            
+            // Enviar SENSOR_AUTH_SUCCESS com JWT (criptografado com SessionKeys)
+            UdpMessage authSuccess = new UdpMessage(
+                MessageType.SENSOR_AUTH_SUCCESS,
+                edgeId,
+                jwt,
+                null
+            );
+            
+            byte[] dadosCifrados = authSuccess.encrypt(sessionKeys);
+            enviarMensagemBytes(dadosCifrados, origem);
+            
+            totalMensagensValidas++;
+            System.out.println("[EdgeServer] ✅ Handshake completo com: " + sensorId + " (" + origem + ")");
+            
+        } catch (Exception e) {
+            totalMensagensInvalidas++;
+            System.err.println("[EdgeServer] ❌ Erro ao processar KEY_EXCHANGE: " + e.getMessage());
+            if (DebugConfig.DEBUG_MODE) {
+                e.printStackTrace();
+            }
+        }
+    }
+    
+    /**
+     * Processar mensagens com SessionKeys de handshake (mensagens de dados após handshake)
+     */
+    private void processarMensagemComSessao(UdpMessage mensagem, String origem, SessionKeys keys) {
+        try {
+            String sensorId = mensagem.getSensorId();
+            
+            // Validar JWT
+            boolean autenticado = autenticacao.autenticarComJWT(sensorId, mensagem.getCredenciais());
+            
+            if (!autenticado) {
+                totalMensagensInvalidas++;
+                System.err.println("[EdgeServer] 🚫 JWT inválido: " + sensorId + " de " + origem);
+                return;
+            }
+            
+            totalMensagensValidas++;
+            
+            if (mensagem.getType() == MessageType.SENSOR_REGISTER) {
+                System.out.println("[EdgeServer] ✅ REGISTER: " + sensorId + " de " + origem);
+            }
+            
+            cache.adicionarLeitura(sensorId, mensagem.getDados());
+            analisarDados(sensorId, mensagem.getDados());
+            
+            if (DebugConfig.DEBUG_MODE) {
+                System.out.printf("[EdgeServer] 📊 %s: Temp=%.1f°C, CO2=%.0f ppm, PM2.5=%.1f µg/m³%n",
+                    sensorId,
+                    mensagem.getDados().getTemperatura(),
+                    mensagem.getDados().getCo2(),
+                    mensagem.getDados().getPm25()
+                );
+            }
+            
+        } catch (Exception e) {
+            totalMensagensInvalidas++;
+            System.err.println("[EdgeServer] ❌ Erro ao processar mensagem: " + e.getMessage());
+            if (DebugConfig.DEBUG_MODE) {
+                e.printStackTrace();
+            }
+        }
+    }
+    
+    
+    /**
+     * Enviar mensagem plaintext (para SENSOR_CHALLENGE)
+     */
+    private void enviarMensagemPlaintext(UdpMessage mensagem, String destino) {
+        try {
             String[] parts = destino.split(":");
             if (parts.length != 2) {
                 System.err.println("[EdgeServer] ❌ Formato de destino inválido: " + destino);
@@ -375,32 +548,51 @@ public class EdgeServer implements Runnable {
             String ip = parts[0];
             int porta = Integer.parseInt(parts[1]);
             
-            // Criar mensagem de resposta
-            UdpMessage resposta = new UdpMessage(
-                tipoResposta,
-                "EDGE_SERVER",
-                jwt != null ? jwt : "AUTH_FAILED",
-                null  // Sem dados ambientais
-            );
+            String mensagemStr = mensagem.serializeToString();
+            byte[] dados = mensagemStr.getBytes(java.nio.charset.StandardCharsets.UTF_8);
             
-            // Cifrar e enviar
-            byte[] dadosCifrados = resposta.encrypt(keys);
             DatagramPacket pacote = new DatagramPacket(
-                dadosCifrados, 
-                dadosCifrados.length, 
-                java.net.InetAddress.getByName(ip), 
+                dados,
+                dados.length,
+                java.net.InetAddress.getByName(ip),
                 porta
             );
             
             socket.send(pacote);
             
+        } catch (Exception e) {
+            System.err.println("[EdgeServer] ❌ Erro ao enviar mensagem plaintext: " + e.getMessage());
             if (DebugConfig.DEBUG_MODE) {
-                System.out.println("[EdgeServer] 📤 Resposta de autenticação enviada para " + destino + 
-                    " (tipo: " + tipoResposta + ")");
+                e.printStackTrace();
+            }
+        }
+    }
+    
+    /**
+     * Enviar mensagem em bytes (já criptografada)
+     */
+    private void enviarMensagemBytes(byte[] dados, String destino) {
+        try {
+            String[] parts = destino.split(":");
+            if (parts.length != 2) {
+                System.err.println("[EdgeServer] ❌ Formato de destino inválido: " + destino);
+                return;
             }
             
+            String ip = parts[0];
+            int porta = Integer.parseInt(parts[1]);
+            
+            DatagramPacket pacote = new DatagramPacket(
+                dados,
+                dados.length,
+                java.net.InetAddress.getByName(ip),
+                porta
+            );
+            
+            socket.send(pacote);
+            
         } catch (Exception e) {
-            System.err.println("[EdgeServer] ❌ Erro ao enviar resposta de autenticação: " + e.getMessage());
+            System.err.println("[EdgeServer] ❌ Erro ao enviar mensagem bytes: " + e.getMessage());
             if (DebugConfig.DEBUG_MODE) {
                 e.printStackTrace();
             }
@@ -420,6 +612,21 @@ public class EdgeServer implements Runnable {
 
         } catch (Exception e) {
             System.err.println("[EdgeServer] Erro ao analisar dados: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Limpar sessão de um sensor (remove senha, SessionKeys e JWT)
+     * Chamado quando sensor desconecta ou sessão expira
+     */
+    private void limparSessaoSensor(String sensorId) {
+        senhasValidadas.remove(sensorId);
+        sessoesHandshake.remove(sensorId);
+        KeyManager.removerChavesDaSessao(sensorId);
+        autenticacao.revogarToken(sensorId);
+        
+        if (DebugConfig.DEBUG_MODE) {
+            System.out.println("[EdgeServer] 🧹 Sessão limpa para: " + sensorId);
         }
     }
 
@@ -468,9 +675,10 @@ public class EdgeServer implements Runnable {
         System.out.println("╚════════════════════════════════════════════════════════════════╝");
     }
 
-    public boolean isExecutando() {
-        return executando;
-    }
+    // Métodos herdados de AbstractServer:
+    // - isExecutando() já está disponível
+    // - getNome() já está disponível
+    // - getPorta() já está disponível
 
     public CacheDados getCache() {
         return cache;

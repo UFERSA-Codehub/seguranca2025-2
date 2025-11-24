@@ -1,4 +1,4 @@
-package com.project.datacenter;
+package com.project.server.datacenter;
 
 import com.project.model.DadosAmbientais;
 import java.sql.*;

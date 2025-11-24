@@ -1,4 +1,4 @@
-package com.project.datacenter;
+package com.project.server.datacenter;
 
 import com.project.messageBus.MessageType;
 import com.project.messageBus.tcp.TcpHandshakeMessage;
@@ -90,9 +90,8 @@ public class ServidorTCP {
             sessionKeys = result.sessionKeys;
             edgeId = result.edgeId;
             
-            // Registrar sessão no KeyManager
-            KeyManager.criarChavesDaSessao(edgeId); // Cria internamente
-            // Como já recebemos as chaves do Edge, vamos usar as chaves recebidas diretamente
+            // Registrar SessionKeys recebidas do Edge no KeyManager
+            KeyManager.registrarSessaoExterna(edgeId, sessionKeys);
             
             System.out.println("[ServidorTCP] ✅ Canal seguro estabelecido com " + clienteInfo + " (Edge: " + edgeId + ")");
 

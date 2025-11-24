@@ -1,4 +1,4 @@
-package com.project.edge;
+package com.project.server.edge;
 
 import com.project.model.DadosAmbientais;
 import java.util.*;

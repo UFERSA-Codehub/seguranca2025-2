@@ -7,18 +7,18 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketTimeoutException;
 
-public class ClienteDiscovery {
+public class DiscoveryClient {
     
     private String servidorHost;
     private int servidorPorta;
-    private static final int TIMEOUT_MS = 5000; // 5 segundos
+    private static final int TIMEOUT_MS = 5000;
     private static final int TAMANHO_BUFFER = 1024;
 
-    public ClienteDiscovery() {
+    public DiscoveryClient() {
         this("127.0.0.1", 4000);
     }
 
-    public ClienteDiscovery(String servidorHost, int servidorPorta) {
+    public DiscoveryClient(String servidorHost, int servidorPorta) {
         this.servidorHost = servidorHost;
         this.servidorPorta = servidorPorta;
     }
@@ -35,7 +35,7 @@ public class ClienteDiscovery {
             return false;
             
         } catch (Exception e) {
-            System.err.println("[ClienteDiscovery] Erro ao registrar Edge: " + e.getMessage());
+            System.err.println("[DiscoveryClient] Erro ao registrar Edge: " + e.getMessage());
             return false;
         }
     }
@@ -52,49 +52,49 @@ public class ClienteDiscovery {
             return false;
             
         } catch (Exception e) {
-            System.err.println("[ClienteDiscovery] Erro ao registrar Datacenter: " + e.getMessage());
+            System.err.println("[DiscoveryClient] Erro ao registrar Datacenter: " + e.getMessage());
             return false;
         }
     }
 
-    public InfoServico descobrirEdge() {
+    public ServiceInfo descobrirEdge() {
         try {
             DiscoveryMessage requisicao = DiscoveryMessage.descobrirEdge();
             DiscoveryMessage resposta = enviarEReceber(requisicao);
             
             if (resposta != null && resposta.getType() == MessageType.DISCOVERY_RESPONSE_EDGE) {
-                return new InfoServico("EDGE", resposta.getHost(), resposta.getPorta());
+                return new ServiceInfo("EDGE", resposta.getHost(), resposta.getPorta());
             }
             
             if (resposta != null && resposta.getType() == MessageType.DISCOVERY_ERROR) {
-                System.err.println("[ClienteDiscovery] Edge não encontrado: " + resposta.getErro());
+                System.err.println("[DiscoveryClient] Edge não encontrado: " + resposta.getErro());
             }
             
             return null;
             
         } catch (Exception e) {
-            System.err.println("[ClienteDiscovery] Erro ao descobrir Edge: " + e.getMessage());
+            System.err.println("[DiscoveryClient] Erro ao descobrir Edge: " + e.getMessage());
             return null;
         }
     }
 
-    public InfoServico descobrirDatacenter() {
+    public ServiceInfo descobrirDatacenter() {
         try {
             DiscoveryMessage requisicao = DiscoveryMessage.descobrirDatacenter();
             DiscoveryMessage resposta = enviarEReceber(requisicao);
             
             if (resposta != null && resposta.getType() == MessageType.DISCOVERY_RESPONSE_DATACENTER) {
-                return new InfoServico("DATACENTER", resposta.getHost(), resposta.getPorta());
+                return new ServiceInfo("DATACENTER", resposta.getHost(), resposta.getPorta());
             }
             
             if (resposta != null && resposta.getType() == MessageType.DISCOVERY_ERROR) {
-                System.err.println("[ClienteDiscovery] Datacenter não encontrado: " + resposta.getErro());
+                System.err.println("[DiscoveryClient] Datacenter não encontrado: " + resposta.getErro());
             }
             
             return null;
             
         } catch (Exception e) {
-            System.err.println("[ClienteDiscovery] Erro ao descobrir Datacenter: " + e.getMessage());
+            System.err.println("[DiscoveryClient] Erro ao descobrir Datacenter: " + e.getMessage());
             return null;
         }
     }
@@ -106,7 +106,6 @@ public class ClienteDiscovery {
             socket = new DatagramSocket();
             socket.setSoTimeout(TIMEOUT_MS);
             
-            // Enviar requisição
             byte[] dadosEnvio = mensagem.toBytes();
             InetAddress endereco = InetAddress.getByName(servidorHost);
             DatagramPacket pacoteEnvio = new DatagramPacket(
@@ -117,7 +116,6 @@ public class ClienteDiscovery {
             );
             socket.send(pacoteEnvio);
             
-            // Aguardar resposta
             byte[] bufferRecebimento = new byte[TAMANHO_BUFFER];
             DatagramPacket pacoteRecebimento = new DatagramPacket(bufferRecebimento, bufferRecebimento.length);
             
@@ -142,7 +140,6 @@ public class ClienteDiscovery {
 
     public boolean testarConexao() {
         try {
-            // Tentar descobrir qualquer serviço como teste
             DiscoveryMessage requisicao = DiscoveryMessage.descobrirEdge();
             DiscoveryMessage resposta = enviarEReceber(requisicao);
             return resposta != null;
@@ -152,7 +149,6 @@ public class ClienteDiscovery {
         }
     }
     
-    // Getters
     public String getServidorHost() { return servidorHost; }
     public int getServidorPorta() { return servidorPorta; }
 }

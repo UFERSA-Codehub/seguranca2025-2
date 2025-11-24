@@ -1,16 +1,19 @@
-package com.project.dispositivo;
+package com.project.sensors;
 
 import com.project.model.DadosAmbientais;
 import com.project.model.Sensor;
 import com.project.security.DebugConfig;
 import com.project.security.KeyManager;
 import com.project.security.SessionKeys;
+import com.project.security.RSA;
 import com.project.messageBus.MessageType;
 import com.project.messageBus.udp.UdpMessage;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.util.Random;
+import java.util.Base64;
+import javax.crypto.KeyGenerator;
 
 public class DispositivoSensor implements Runnable {
     private Sensor metadados;               // Informações do sensor
@@ -26,9 +29,11 @@ public class DispositivoSensor implements Runnable {
     private String senha;                   // Senha para autenticação JWT
     private String jwtToken;                // Token JWT obtido do EdgeServer
     private boolean autenticado;            // Indica se o sensor foi autenticado com JWT
+    private SessionKeys sessionKeys;        // Chaves de sessão únicas (geradas localmente)
+    private RSA rsaEdge;                    // Chave pública RSA do EdgeServer
 
     public DispositivoSensor(Sensor metadados, String edgeServerHost, int edgeServerPort, String senha) {
-        this(metadados, edgeServerHost, edgeServerPort, senha, 2000, 3000);
+        this(metadados, edgeServerHost, edgeServerPort, senha, 5000, 7000);
     }
 
     public DispositivoSensor(Sensor metadados, String edgeServerHost, int edgeServerPort, 
@@ -156,118 +161,200 @@ public class DispositivoSensor implements Runnable {
     }
 
     /**
-     * Autentica o sensor no EdgeServer e obtém JWT
+     * Autentica o sensor no EdgeServer usando handshake RSA
+     * Fluxo: HELLO → CHALLENGE → KEY_EXCHANGE → AUTH_SUCCESS
      * @return true se autenticação foi bem-sucedida, false caso contrário
      */
     private boolean autenticarNoEdge() {
         try {
-            System.out.println("[DispositivoSensor] Iniciando autenticação do sensor " + metadados.getId() + "...");
+            System.out.println("[DispositivoSensor] " + metadados.getId() + ": Iniciando handshake RSA...");
 
-            // Criar mensagem de autenticação (sem dados ambientais)
-            UdpMessage authRequest = new UdpMessage(
-                MessageType.SENSOR_AUTH_REQUEST,
-                metadados.getId(),
-                senha,  // Senha em texto claro na mensagem
-                null    // Sem dados ambientais
-            );
-
-            // Obter chaves de sessão para criptografia
-            SessionKeys keys = new SessionKeys(
-                metadados.getId(),
-                KeyManager.getAESKey(),
-                KeyManager.getHMACKey(),
-                System.currentTimeMillis(),
-                System.currentTimeMillis() + (24 * 60 * 60 * 1000)
-            );
-
-            // Cifrar mensagem
-            byte[] dadosCifrados = authRequest.encrypt(keys);
-            if (dadosCifrados == null) {
-                System.err.println("[DispositivoSensor] Erro ao cifrar requisição de autenticação");
+            // PASSO 1: Enviar SENSOR_HELLO (plaintext com sensorId + senha)
+            UdpMessage hello = UdpMessage.createHello(metadados.getId(), senha);
+            if (!enviarMensagemPlaintext(hello)) {
+                System.err.println("[DispositivoSensor] Erro ao enviar HELLO");
                 return false;
             }
-
-            // Enviar requisição
-            InetAddress endereco = InetAddress.getByName(edgeServerHost);
-            DatagramPacket pacoteEnvio = new DatagramPacket(dadosCifrados, dadosCifrados.length, endereco, edgeServerPort);
-            socket.send(pacoteEnvio);
-
+            
             if (DebugConfig.DEBUG_MODE) {
-                System.out.println("[DispositivoSensor] Requisição de autenticação enviada. Aguardando resposta...");
+                System.out.println("[DispositivoSensor] " + metadados.getId() + ": HELLO enviado");
             }
 
-            // Configurar timeout para receber resposta (5 segundos)
-            socket.setSoTimeout(5000);
-
-            // Aguardar resposta
-            byte[] bufferResposta = new byte[8192];
-            DatagramPacket pacoteResposta = new DatagramPacket(bufferResposta, bufferResposta.length);
-            socket.receive(pacoteResposta);
-
-            // Descriptografar resposta
-            byte[] dadosRecebidos = new byte[pacoteResposta.getLength()];
-            System.arraycopy(pacoteResposta.getData(), 0, dadosRecebidos, 0, pacoteResposta.getLength());
-
-            UdpMessage respostaAuth = UdpMessage.decryptMessage(dadosRecebidos, keys);
-            if (respostaAuth == null) {
-                System.err.println("[DispositivoSensor] Erro ao descriptografar resposta de autenticação");
+            // PASSO 2: Receber SENSOR_CHALLENGE (plaintext com chave pública RSA)
+            socket.setSoTimeout(5000); // 5 segundos timeout
+            UdpMessage challenge = receberMensagemPlaintext();
+            
+            if (challenge == null || challenge.getType() != MessageType.SENSOR_CHALLENGE) {
+                System.err.println("[DispositivoSensor] CHALLENGE não recebido ou inválido");
+                return false;
+            }
+            
+            if (DebugConfig.DEBUG_MODE) {
+                System.out.println("[DispositivoSensor] " + metadados.getId() + ": CHALLENGE recebido");
+            }
+            
+            // Extrair chave pública RSA do EdgeServer
+            String publicKeyBase64 = challenge.getPublicKeyBase64();
+            rsaEdge = new RSA();
+            java.security.PublicKey edgePublicKey = RSA.importarChavePublicaBase64(publicKeyBase64);
+            
+            if (edgePublicKey == null) {
+                System.err.println("[DispositivoSensor] Erro ao importar chave pública do EdgeServer");
                 return false;
             }
 
-            // Verificar tipo de resposta
-            if (respostaAuth.getType() == MessageType.SENSOR_AUTH_SUCCESS) {
-                // Extrair JWT do campo token
-                jwtToken = respostaAuth.getToken();
-                autenticado = true;
-
-                if (DebugConfig.DEBUG_MODE) {
-                    System.out.println("[DispositivoSensor] JWT recebido: " + jwtToken.substring(0, Math.min(50, jwtToken.length())) + "...");
-                }
-
-                return true;
-
-            } else if (respostaAuth.getType() == MessageType.SENSOR_AUTH_FAILED) {
-                System.err.println("[DispositivoSensor] Autenticação falhou: credenciais inválidas");
-                return false;
-
-            } else {
-                System.err.println("[DispositivoSensor] Resposta inesperada do EdgeServer: " + respostaAuth.getType());
+            // PASSO 3: Gerar SessionKeys aleatórias únicas
+            javax.crypto.SecretKey aesKey = KeyGenerator.getInstance("AES").generateKey();
+            javax.crypto.SecretKey hmacKey = KeyGenerator.getInstance("HmacSHA256").generateKey();
+            
+            sessionKeys = new SessionKeys(
+                metadados.getId(),
+                aesKey,
+                hmacKey,
+                System.currentTimeMillis(),
+                System.currentTimeMillis() + (30 * 60 * 1000) // 30 min
+            );
+            
+            // Serializar SessionKeys: "aesKeyBase64||hmacKeyBase64"
+            String aesKeyBase64 = Base64.getEncoder().encodeToString(aesKey.getEncoded());
+            String hmacKeyBase64 = Base64.getEncoder().encodeToString(hmacKey.getEncoded());
+            String keysJson = aesKeyBase64 + "||" + hmacKeyBase64;
+            
+            // Cifrar SessionKeys com chave pública RSA do EdgeServer
+            byte[] keysBytes = keysJson.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            byte[] encryptedKeys = rsaEdge.cifrar(keysBytes, edgePublicKey);
+            
+            if (encryptedKeys == null) {
+                System.err.println("[DispositivoSensor] Erro ao cifrar SessionKeys com RSA");
                 return false;
             }
+            
+            // Enviar SENSOR_KEY_EXCHANGE (plaintext com SessionKeys criptografadas)
+            UdpMessage keyExchange = UdpMessage.createKeyExchange(metadados.getId(), encryptedKeys);
+            if (!enviarMensagemPlaintext(keyExchange)) {
+                System.err.println("[DispositivoSensor] Erro ao enviar KEY_EXCHANGE");
+                return false;
+            }
+            
+            if (DebugConfig.DEBUG_MODE) {
+                System.out.println("[DispositivoSensor] " + metadados.getId() + ": KEY_EXCHANGE enviado");
+            }
+
+            // PASSO 4: Receber SENSOR_AUTH_SUCCESS (criptografado com SessionKeys)
+            byte[] authResponseBytes = receberMensagemBytes();
+            UdpMessage authSuccess = UdpMessage.decryptMessage(authResponseBytes, sessionKeys);
+            
+            if (authSuccess == null || authSuccess.getType() != MessageType.SENSOR_AUTH_SUCCESS) {
+                System.err.println("[DispositivoSensor] AUTH_SUCCESS não recebido ou inválido");
+                return false;
+            }
+            
+            // Extrair JWT
+            jwtToken = authSuccess.getCredenciais();
+            autenticado = true;
+            
+            System.out.println("[DispositivoSensor] ✅ " + metadados.getId() + ": Handshake RSA completo!");
+            
+            if (DebugConfig.DEBUG_MODE) {
+                System.out.println("[DispositivoSensor] JWT: " + jwtToken.substring(0, Math.min(50, jwtToken.length())) + "...");
+            }
+            
+            return true;
 
         } catch (java.net.SocketTimeoutException e) {
-            System.err.println("[DispositivoSensor] Timeout ao aguardar resposta de autenticação do EdgeServer");
+            System.err.println("[DispositivoSensor] Timeout durante handshake RSA");
             return false;
 
         } catch (Exception e) {
-            System.err.println("[DispositivoSensor] Erro durante autenticação: " + e.getMessage());
+            System.err.println("[DispositivoSensor] Erro durante handshake RSA: " + e.getMessage());
             if (DebugConfig.DEBUG_MODE) {
                 e.printStackTrace();
             }
             return false;
         } finally {
-            // Remover timeout para operações normais
+            // Remover timeout
             try {
                 socket.setSoTimeout(0);
             } catch (Exception e) {
-                // Ignorar erro ao resetar timeout
+                // Ignorar
             }
+        }
+    }
+    
+    /**
+     * Enviar mensagem plaintext (HELLO, KEY_EXCHANGE)
+     */
+    private boolean enviarMensagemPlaintext(UdpMessage mensagem) {
+        try {
+            String mensagemStr = mensagem.serializeToString();
+            byte[] dados = mensagemStr.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            
+            InetAddress endereco = InetAddress.getByName(edgeServerHost);
+            DatagramPacket pacote = new DatagramPacket(dados, dados.length, endereco, edgeServerPort);
+            socket.send(pacote);
+            
+            return true;
+        } catch (Exception e) {
+            System.err.println("[DispositivoSensor] Erro ao enviar mensagem plaintext: " + e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Receber mensagem plaintext (CHALLENGE)
+     */
+    private UdpMessage receberMensagemPlaintext() {
+        try {
+            byte[] buffer = new byte[8192];
+            DatagramPacket pacote = new DatagramPacket(buffer, buffer.length);
+            socket.receive(pacote);
+            
+            byte[] dadosRecebidos = new byte[pacote.getLength()];
+            System.arraycopy(pacote.getData(), 0, dadosRecebidos, 0, pacote.getLength());
+            
+            String mensagemStr = new String(dadosRecebidos, java.nio.charset.StandardCharsets.UTF_8);
+            return UdpMessage.deserializeFromString(mensagemStr);
+            
+        } catch (Exception e) {
+            if (DebugConfig.DEBUG_MODE) {
+                System.err.println("[DispositivoSensor] Erro ao receber mensagem plaintext: " + e.getMessage());
+            }
+            return null;
+        }
+    }
+    
+    /**
+     * Receber mensagem em bytes (AUTH_SUCCESS criptografado)
+     */
+    private byte[] receberMensagemBytes() {
+        try {
+            byte[] buffer = new byte[8192];
+            DatagramPacket pacote = new DatagramPacket(buffer, buffer.length);
+            socket.receive(pacote);
+            
+            byte[] dadosRecebidos = new byte[pacote.getLength()];
+            System.arraycopy(pacote.getData(), 0, dadosRecebidos, 0, pacote.getLength());
+            
+            return dadosRecebidos;
+            
+        } catch (Exception e) {
+            if (DebugConfig.DEBUG_MODE) {
+                System.err.println("[DispositivoSensor] Erro ao receber mensagem bytes: " + e.getMessage());
+            }
+            return null;
         }
     }
 
     private boolean enviarMensagem(UdpMessage mensagem) {
         try {
-            // Obter chaves de sessão do KeyManager
-            SessionKeys keys = new SessionKeys(
-                metadados.getId(),
-                KeyManager.getAESKey(),
-                KeyManager.getHMACKey(),
-                System.currentTimeMillis(),
-                System.currentTimeMillis() + (24 * 60 * 60 * 1000) // 24 horas
-            );
+            // Usar SessionKeys do handshake (únicas para este sensor)
+            if (sessionKeys == null) {
+                System.err.println("[DispositivoSensor] SessionKeys não disponíveis (handshake não realizado)");
+                return false;
+            }
             
-            // Cifrar mensagem
-            byte[] dadosCifrados = mensagem.encrypt(keys);
+            // Cifrar mensagem com SessionKeys
+            byte[] dadosCifrados = mensagem.encrypt(sessionKeys);
             
             if (dadosCifrados == null) {
                 System.err.println("[DispositivoSensor] Erro ao cifrar mensagem do sensor " + metadados.getId());

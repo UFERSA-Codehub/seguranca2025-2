@@ -1,6 +1,9 @@
-package com.project.discovery;
+package com.project.server.discovery;
 
+import com.project.discovery.ServiceInfo;
 import com.project.messageBus.udp.DiscoveryMessage;
+import com.project.server.Server;
+import com.project.server.config.DiscoveryConfig;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -8,22 +11,28 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-public class DiscoveryServer implements Runnable {
+public class DiscoveryServer implements Server, Runnable {
     
-    private int porta;
+    private DiscoveryConfig config;
     private DatagramSocket socket;
     private boolean executando;
     private Thread thread;
     
-    // Listas thread-safe de serviços registrados
-    private List<InfoServico> edgeServers;
-    private List<InfoServico> datacenters;
+    private List<ServiceInfo> edgeServers;
+    private List<ServiceInfo> datacenters;
     
-    private static final int TIMEOUT_HEARTBEAT_MS = 60000; // 60 segundos
-    private static final int TAMANHO_BUFFER = 1024;
+    /**
+     * Construtor com valores padrão (porta 4000)
+     */
+    public DiscoveryServer() {
+        this(new DiscoveryConfig());
+    }
     
-    public DiscoveryServer(int porta) {
-        this.porta = porta;
+    /**
+     * Construtor principal - aceita configuração completa
+     */
+    public DiscoveryServer(DiscoveryConfig config) {
+        this.config = config;
         this.executando = false;
         this.edgeServers = new CopyOnWriteArrayList<>();
         this.datacenters = new CopyOnWriteArrayList<>();
@@ -31,21 +40,21 @@ public class DiscoveryServer implements Runnable {
 
     public void iniciar() {
         if (executando) {
-            System.err.println("[DiscoveryServer] Servidor já está em execução!");
+            System.err.println("[" + config.getNome() + "] Servidor já está em execução!");
             return;
         }
         
         try {
-            socket = new DatagramSocket(porta);
+            socket = new DatagramSocket(config.getPorta());
             executando = true;
-            thread = new Thread(this, "DiscoveryServer");
+            thread = new Thread(this, config.getNome());
             thread.start();
             
-            System.out.println("[DiscoveryServer] 🌐 Servidor de Localização iniciado na porta " + porta);
-            System.out.println("[DiscoveryServer] 📝 Aguardando registro de serviços e requisições de descoberta...\n");
+            System.out.println("[" + config.getNome() + "] 🌐 Servidor de Localização iniciado na porta " + config.getPorta());
+            System.out.println("[" + config.getNome() + "] 📝 Aguardando registro de serviços e requisições de descoberta...\n");
             
         } catch (Exception e) {
-            System.err.println("[DiscoveryServer] Erro ao iniciar servidor: " + e.getMessage());
+            System.err.println("[" + config.getNome() + "] Erro ao iniciar servidor: " + e.getMessage());
             e.printStackTrace();
             executando = false;
         }
@@ -66,12 +75,12 @@ public class DiscoveryServer implements Runnable {
             }
         }
         
-        System.out.println("[DiscoveryServer] 🛑 Servidor de Localização parado.");
+        System.out.println("[" + config.getNome() + "] 🛑 Servidor de Localização parado.");
     }
     
     @Override
     public void run() {
-        byte[] buffer = new byte[TAMANHO_BUFFER];
+        byte[] buffer = new byte[config.getTamanhoBuffer()];
         
         while (executando) {
             try {
@@ -84,12 +93,12 @@ public class DiscoveryServer implements Runnable {
                 
             } catch (Exception e) {
                 if (executando) {
-                    System.err.println("[DiscoveryServer] Erro ao receber pacote: " + e.getMessage());
+                    System.err.println("[" + config.getNome() + "] Erro ao receber pacote: " + e.getMessage());
                 }
             }
         }
         
-        System.out.println("[DiscoveryServer] Thread principal encerrada.");
+        System.out.println("[" + config.getNome() + "] Thread principal encerrada.");
     }
 
     private void processarMensagem(DatagramPacket pacote) {
@@ -144,7 +153,7 @@ public class DiscoveryServer implements Runnable {
             }
             
         } catch (Exception e) {
-            System.err.println("[DiscoveryServer] Erro ao processar mensagem: " + e.getMessage());
+            System.err.println("[" + config.getNome() + "] Erro ao processar mensagem: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -158,14 +167,14 @@ public class DiscoveryServer implements Runnable {
         int porta = mensagem.getPorta();
         
         // Verificar se já existe
-        InfoServico existente = buscarEdge(host, porta);
+        ServiceInfo existente = buscarEdge(host, porta);
         if (existente != null) {
             existente.atualizarHeartbeat();
-            System.out.println("[DiscoveryServer] 🔄 Edge Server atualizado: " + host + ":" + porta);
+            System.out.println("[" + config.getNome() + "] 🔄 Edge Server atualizado: " + host + ":" + porta);
         } else {
-            InfoServico novoEdge = new InfoServico("EDGE", host, porta);
+            ServiceInfo novoEdge = new ServiceInfo("EDGE", host, porta);
             edgeServers.add(novoEdge);
-            System.out.println("[DiscoveryServer] ✅ Edge Server registrado: " + host + ":" + porta);
+            System.out.println("[" + config.getNome() + "] ✅ Edge Server registrado: " + host + ":" + porta);
         }
         
         // Retornar confirmação
@@ -181,14 +190,14 @@ public class DiscoveryServer implements Runnable {
         int porta = mensagem.getPorta();
         
         // Verificar se já existe
-        InfoServico existente = buscarDatacenter(host, porta);
+        ServiceInfo existente = buscarDatacenter(host, porta);
         if (existente != null) {
             existente.atualizarHeartbeat();
-            System.out.println("[DiscoveryServer] 🔄 Datacenter atualizado: " + host + ":" + porta);
+            System.out.println("[" + config.getNome() + "] 🔄 Datacenter atualizado: " + host + ":" + porta);
         } else {
-            InfoServico novoDatacenter = new InfoServico("DATACENTER", host, porta);
+            ServiceInfo novoDatacenter = new ServiceInfo("DATACENTER", host, porta);
             datacenters.add(novoDatacenter);
-            System.out.println("[DiscoveryServer] ✅ Datacenter registrado: " + host + ":" + porta);
+            System.out.println("[" + config.getNome() + "] ✅ Datacenter registrado: " + host + ":" + porta);
         }
         
         // Retornar confirmação
@@ -198,37 +207,37 @@ public class DiscoveryServer implements Runnable {
     private DiscoveryMessage processarDescobertaEdge() {
         // Remover serviços inativos
         // COMENTADO: Edge Servers não enviam heartbeat periódico
-        // edgeServers.removeIf(edge -> !edge.estaAtivo(TIMEOUT_HEARTBEAT_MS));
+        // edgeServers.removeIf(edge -> !edge.estaAtivo(config.getTimeoutHeartbeat()));
 
         if (edgeServers.isEmpty()) {
-            System.out.println("[DiscoveryServer] ⚠️  Nenhum Edge Server disponível");
+            System.out.println("[" + config.getNome() + "] ⚠️  Nenhum Edge Server disponível");
             return DiscoveryMessage.erro("Nenhum Edge Server disponível");
         }
         
         // Retornar o primeiro disponível (pode implementar load balancing aqui)
-        InfoServico edge = edgeServers.get(0);
-        System.out.println("[DiscoveryServer] 🔍 Descoberta Edge → " + edge.getHost() + ":" + edge.getPorta());
+        ServiceInfo edge = edgeServers.get(0);
+        System.out.println("[" + config.getNome() + "] 🔍 Descoberta Edge → " + edge.getHost() + ":" + edge.getPorta());
         return DiscoveryMessage.respostaEdge(edge.getHost(), edge.getPorta());
     }
 
     private DiscoveryMessage processarDescobertaDatacenter() {
         // Remover serviços inativos
         // COMENTADO: Datacenters não enviam heartbeat periódico
-        // datacenters.removeIf(dc -> !dc.estaAtivo(TIMEOUT_HEARTBEAT_MS));
+        // datacenters.removeIf(dc -> !dc.estaAtivo(config.getTimeoutHeartbeat()));
 
         if (datacenters.isEmpty()) {
-            System.out.println("[DiscoveryServer] ⚠️  Nenhum Datacenter disponível");
+            System.out.println("[" + config.getNome() + "] ⚠️  Nenhum Datacenter disponível");
             return DiscoveryMessage.erro("Nenhum Datacenter disponível");
         }
         
         // Retornar o primeiro disponível (pode implementar load balancing aqui)
-        InfoServico datacenter = datacenters.get(0);
-        System.out.println("[DiscoveryServer] 🔍 Descoberta Datacenter → " + datacenter.getHost() + ":" + datacenter.getPorta());
+        ServiceInfo datacenter = datacenters.get(0);
+        System.out.println("[" + config.getNome() + "] 🔍 Descoberta Datacenter → " + datacenter.getHost() + ":" + datacenter.getPorta());
         return DiscoveryMessage.respostaDatacenter(datacenter.getHost(), datacenter.getPorta());
     }
 
-    private InfoServico buscarEdge(String host, int porta) {
-        for (InfoServico edge : edgeServers) {
+    private ServiceInfo buscarEdge(String host, int porta) {
+        for (ServiceInfo edge : edgeServers) {
             if (edge.getHost().equals(host) && edge.getPorta() == porta) {
                 return edge;
             }
@@ -236,8 +245,8 @@ public class DiscoveryServer implements Runnable {
         return null;
     }
 
-    private InfoServico buscarDatacenter(String host, int porta) {
-        for (InfoServico dc : datacenters) {
+    private ServiceInfo buscarDatacenter(String host, int porta) {
+        for (ServiceInfo dc : datacenters) {
             if (dc.getHost().equals(host) && dc.getPorta() == porta) {
                 return dc;
             }
@@ -250,26 +259,34 @@ public class DiscoveryServer implements Runnable {
         System.out.println("║       STATUS DO SERVIDOR DE LOCALIZAÇÃO                        ║");
         System.out.println("╠════════════════════════════════════════════════════════════════╣");
         
-        System.out.println("║  Edge Servers registrados: " + edgeServers.size() + "                                 ║");
-        for (InfoServico edge : edgeServers) {
-            String status = edge.estaAtivo(TIMEOUT_HEARTBEAT_MS) ? "🟢 ATIVO" : "🔴 INATIVO";
-            System.out.printf("║    %s %s:%-5d                                       ║%n",
+        System.out.println("║  Edge Servers registrados: " + edgeServers.size() + "                                   ║");
+        for (ServiceInfo edge : edgeServers) {
+            String status = edge.estaAtivo(config.getTimeoutHeartbeat()) ? "🟢 ATIVO" : "🔴 INATIVO";
+            System.out.printf("║    %s %s:%-5d                                    ║%n",
                 status, edge.getHost(), edge.getPorta());
         }
         
         System.out.println("║                                                                ║");
-        System.out.println("║  Datacenters registrados: " + datacenters.size() + "                                  ║");
-        for (InfoServico dc : datacenters) {
-            String status = dc.estaAtivo(TIMEOUT_HEARTBEAT_MS) ? "🟢 ATIVO" : "🔴 INATIVO";
-            System.out.printf("║    %s %s:%-5d                                       ║%n",
+        System.out.println("║  Datacenters registrados: " + datacenters.size() + "                                    ║");
+        for (ServiceInfo dc : datacenters) {
+            String status = dc.estaAtivo(config.getTimeoutHeartbeat()) ? "🟢 ATIVO" : "🔴 INATIVO";
+            System.out.printf("║    %s %s:%-5d                                    ║%n",
                 status, dc.getHost(), dc.getPorta());
         }
         
         System.out.println("╚════════════════════════════════════════════════════════════════╝\n");
     }
     
-    // Getters
+    // Getters (Interface Server)
+    @Override
     public boolean isExecutando() { return executando; }
-    public List<InfoServico> getEdgeServers() { return new ArrayList<>(edgeServers); }
-    public List<InfoServico> getDatacenters() { return new ArrayList<>(datacenters); }
+    
+    @Override
+    public String getNome() { return config.getNome(); }
+    
+    @Override
+    public int getPorta() { return config.getPorta(); }
+    
+    public List<ServiceInfo> getEdgeServers() { return new ArrayList<>(edgeServers); }
+    public List<ServiceInfo> getDatacenters() { return new ArrayList<>(datacenters); }
 }

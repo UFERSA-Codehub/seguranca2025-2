@@ -1,4 +1,4 @@
-package com.project.datacenter;
+package com.project.server.datacenter;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -164,16 +164,6 @@ public class ServidorHTTP {
         claims.put("admin", "admin".equals(usuario)); // Apenas 'admin' tem privilégios de admin
         
         return JWTManager.gerarToken(usuario, claims);
-    }
-
-    private String extrairCampoJSON(String json, String campo) {
-        String busca = "\"" + campo + "\":\"";
-        int inicio = json.indexOf(busca);
-        if (inicio == -1) return null;
-        inicio += busca.length();
-        int fim = json.indexOf("\"", inicio);
-        if (fim == -1) return null;
-        return json.substring(inicio, fim);
     }
 
     // ═══════════════════════════════════════════════════════════════

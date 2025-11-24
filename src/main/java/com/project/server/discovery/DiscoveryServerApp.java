@@ -1,22 +1,21 @@
-package com.project.discovery;
+package com.project.server.discovery;
 
+import com.project.server.config.DiscoveryConfig;
 import java.util.Scanner;
 
 public class DiscoveryServerApp {
     
-    private static final int PORTA_PADRAO = 4000;
-    
     public static void main(String[] args) {
-        int porta = PORTA_PADRAO;
-        boolean daemonMode = false;
-
+        // Criar configuração
+        DiscoveryConfig config = new DiscoveryConfig();
+        
         // Processar argumentos
         for (String arg : args) {
             if (arg.equals("--daemon")) {
-                daemonMode = true;
+                config.setDaemonMode(true);
             } else {
                 try {
-                    porta = Integer.parseInt(arg);
+                    config.setPorta(Integer.parseInt(arg));
                 } catch (NumberFormatException e) {
                     System.err.println("❌ Porta inválida: " + arg);
                     System.err.println("Uso: java DiscoveryServerApp [porta] [--daemon]");
@@ -26,9 +25,9 @@ public class DiscoveryServerApp {
         }
         
         System.out.println("╔════════════════════════════════════════════════════════════════╗");
-        System.out.println("║       SERVIDOR DE LOCALIZAÇÃO (DISCOVERY SERVICE)             ║");
+        System.out.println("║       SERVIDOR DE LOCALIZAÇÃO (DISCOVERY SERVICE)              ║");
         System.out.println("╠════════════════════════════════════════════════════════════════╣");
-        System.out.printf("║  Porta:           %-45d ║%n", porta);
+        System.out.printf("║  Porta:           %-45d║%n", config.getPorta());
         System.out.println("║  Protocolo:       UDP                                          ║");
         System.out.println("║                                                                ║");
         System.out.println("║  Este servidor permite:                                        ║");
@@ -39,7 +38,7 @@ public class DiscoveryServerApp {
         System.out.println("╚════════════════════════════════════════════════════════════════╝\n");
         
         // Criar e iniciar servidor
-        DiscoveryServer servidor = new DiscoveryServer(porta);
+        DiscoveryServer servidor = new DiscoveryServer(config);
         
         // Registrar shutdown hook para parada graceful
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -51,7 +50,7 @@ public class DiscoveryServerApp {
         try {
             servidor.iniciar();
 
-            if (!daemonMode) {
+            if (!config.isDaemonMode()) {
                 System.out.println("╔════════════════════════════════════════════════════════════════╗");
                 System.out.println("║  COMANDOS DISPONÍVEIS:                                         ║");
                 System.out.println("║    status  - Exibe serviços registrados                        ║");

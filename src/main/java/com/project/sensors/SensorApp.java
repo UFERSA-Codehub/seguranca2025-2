@@ -1,4 +1,4 @@
-package com.project.dispositivo;
+package com.project.sensors;
 
 import com.project.model.Sensor;
 
@@ -81,8 +81,8 @@ public class SensorApp {
         System.out.println("╠════════════════════════════════════════════════════════════════╣");
         System.out.println("║  Argumentos obrigatórios:                                      ║");
         System.out.println("║    1. sensorId     - ID único do sensor (ex: SENSOR_001)       ║");
-        System.out.println("║    2. nome         - Nome descritivo (ex: \"Sensor Parque\")     ║");
-        System.out.println("║    3. localizacao  - Local (ex: \"Parque Central\")              ║");
+        System.out.println("║    2. nome         - Nome descritivo (ex: \"Sensor Parque\")   ║");
+        System.out.println("║    3. localizacao  - Local (ex: \"Parque Central\")            ║");
         System.out.println("║    4. token        - Token de autenticação                     ║");
         System.out.println("║                                                                ║");
         System.out.println("║  Argumentos opcionais:                                         ║");
@@ -91,12 +91,12 @@ public class SensorApp {
         System.out.println("╠════════════════════════════════════════════════════════════════╣");
         System.out.println("║  Exemplo:                                                      ║");
         System.out.println("║                                                                ║");
-        System.out.println("║  java -cp target/classes com.project.dispositivo.SensorApp \\   ║");
-        System.out.println("║       SENSOR_001 \\                                             ║");
-        System.out.println("║       \"Sensor Parque Central\" \\                                ║");
-        System.out.println("║       \"Parque Central\" \\                                       ║");
-        System.out.println("║       TOKEN_SENSOR_001_8f3a9b2c \\                              ║");
-        System.out.println("║       localhost \\                                              ║");
+        System.out.println("║  java -cp target/classes com.project.dispositivo.SensorApp \\  ║");
+        System.out.println("║       SENSOR_001 \\                                            ║");
+        System.out.println("║       \"Sensor Parque Central\" \\                             ║");
+        System.out.println("║       \"Parque Central\" \\                                    ║");
+        System.out.println("║       TOKEN_SENSOR_001_8f3a9b2c \\                             ║");
+        System.out.println("║       localhost \\                                             ║");
         System.out.println("║       5000                                                     ║");
         System.out.println("╚════════════════════════════════════════════════════════════════╝");
     }

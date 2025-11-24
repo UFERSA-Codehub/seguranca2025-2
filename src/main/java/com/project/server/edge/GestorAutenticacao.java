@@ -1,4 +1,4 @@
-package com.project.edge;
+package com.project.server.edge;
 
 import com.project.security.JWTManager;
 import com.project.security.RateLimiter;
@@ -6,7 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class GestorAutenticacao {
-    private Map<String, String> senhasSensores;       // sensorId -> senha (plaintext por simplicidade)
+    private Map<String, String> senhasSensores;       // sensorId -> senha
     private Map<String, String> tokensAtivos;         // sensorId -> JWT ativo
     private RateLimiter rateLimiter;                  // Controle de rate limiting
 
@@ -18,7 +18,6 @@ public class GestorAutenticacao {
     }
 
     private void inicializarSenhas() {
-        // Em produção, usar BCrypt e banco de dados
         senhasSensores.put("SENSOR_001", "senha123");
         senhasSensores.put("SENSOR_002", "industrial456");
         senhasSensores.put("SENSOR_003", "comercial789");
@@ -96,7 +95,7 @@ public class GestorAutenticacao {
         return true;
     }
 
-    private boolean validarCredenciais(String sensorId, String senha) {
+    public boolean validarCredenciais(String sensorId, String senha) {
         return senhasSensores.containsKey(sensorId) && 
                senhasSensores.get(sensorId).equals(senha);
     }

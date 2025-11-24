@@ -1,13 +1,13 @@
 package com.project.discovery;
 
-public class InfoServico {
-    private String tipo;          // "EDGE" ou "DATACENTER"
-    private String host;          // IP ou hostname
-    private int porta;            // Porta do serviço
-    private long timestampRegistro;  // Quando foi registrado
-    private long timestampHeartbeat; // Último heartbeat recebido
+public class ServiceInfo {
+    private String tipo;
+    private String host;
+    private int porta;
+    private long timestampRegistro;
+    private long timestampHeartbeat;
     
-    public InfoServico(String tipo, String host, int porta) {
+    public ServiceInfo(String tipo, String host, int porta) {
         this.tipo = tipo;
         this.host = host;
         this.porta = porta;
@@ -23,7 +23,6 @@ public class InfoServico {
         return (System.currentTimeMillis() - timestampHeartbeat) < timeoutMs;
     }
     
-    // Getters
     public String getTipo() { return tipo; }
     public String getHost() { return host; }
     public int getPorta() { return porta; }
@@ -32,7 +31,7 @@ public class InfoServico {
     
     @Override
     public String toString() {
-        return String.format("InfoServico{tipo='%s', host='%s', porta=%d, registrado=%d, heartbeat=%d}",
+        return String.format("ServiceInfo{tipo='%s', host='%s', porta=%d, registrado=%d, heartbeat=%d}",
             tipo, host, porta, timestampRegistro, timestampHeartbeat);
     }
 }
