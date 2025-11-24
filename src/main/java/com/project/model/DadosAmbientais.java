@@ -67,8 +67,8 @@ public class DadosAmbientais {
         double umidade = 10 + (90) * rand.nextDouble(); // 10% a 100%
         double ruido = 30 + (100) * rand.nextDouble(); // 30 a 130 dB
         double radiacao_uv = 0 + (11) * rand.nextDouble(); // 0 a 11 índice UV
-        double pm25 = 0 + (500) * rand.nextDouble(); // 0 a 500 µg/m³
-        double pm10 = 0 + (500) * rand.nextDouble(); // 0 a 500 µg/m³
+        double pm25 = rand.nextDouble() * 100; // 0 a 100 µg/m³ (realistic range)
+        double pm10 = rand.nextDouble() * 200; // 0 a 200 µg/m³ (realistic range)
 
         return new DadosAmbientais(timestamp, localizacao, temperatura, co2, umidade, ruido, radiacao_uv, pm25, pm10);
     }

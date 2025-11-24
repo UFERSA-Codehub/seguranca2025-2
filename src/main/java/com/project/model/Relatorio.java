@@ -7,9 +7,7 @@ import java.util.List;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-/**
- * Relatório com geração inteligente via LLM.
- */
+
 public class Relatorio {
     
     private String id;
@@ -31,10 +29,7 @@ public class Relatorio {
     // Texto gerado pela LLM
     private String conclusao;
     private List<String> recomendacoes;
-    
-    /**
-     * Construtor privado.
-     */
+
     private Relatorio(TipoRelatorio tipo, List<DadosAmbientais> dados) {
         this.id = "REL_" + System.currentTimeMillis();
         this.tipo = tipo;
@@ -43,10 +38,7 @@ public class Relatorio {
         this.alertas = new ArrayList<>();
         this.recomendacoes = new ArrayList<>();
     }
-    
-    /**
-     * Gera relatório com análise LLM.
-     */
+
     public static Relatorio gerar(TipoRelatorio tipo, List<DadosAmbientais> dados) {
         if (tipo == null || dados == null || dados.isEmpty()) {
             throw new IllegalArgumentException("Tipo e dados não podem ser nulos ou vazios");
@@ -69,10 +61,7 @@ public class Relatorio {
         
         return rel;
     }
-    
-    /**
-     * Calcula estatísticas dos dados.
-     */
+
     private void calcularEstatisticas() {
         double somaPm25 = 0, somaPm10 = 0, somaCo2 = 0;
         double somaTemp = 0, somaUmid = 0, somaRuido = 0, somaUV = 0;
@@ -102,19 +91,13 @@ public class Relatorio {
         double iqaCo2 = calcularIQA(mediaCo2, "CO2");
         this.iqa = Math.max(iqaPm25, Math.max(iqaPm10, iqaCo2));
     }
-    
-    /**
-     * Coleta alertas.
-     */
+
     private void coletarAlertas() {
         for (DadosAmbientais d : dados) {
             alertas.addAll(Alerta.analisar(d));
         }
     }
-    
-    /**
-     * Gera texto usando LLM.
-     */
+
     private void gerarTextoComLLM() throws Exception {
         // Montar contexto
         RelatorioContext contexto = new RelatorioContext();
@@ -144,10 +127,7 @@ public class Relatorio {
         this.conclusao = resultado.conclusao;
         this.recomendacoes = resultado.recomendacoes;
     }
-    
-    /**
-     * Calcula IQA (fórmula EPA).
-     */
+
     private double calcularIQA(double concentracao, String poluente) {
         double[][] breakpoints;
         
@@ -193,6 +173,14 @@ public class Relatorio {
     public String getConclusao() { return conclusao; }
     public List<String> getRecomendacoes() { return recomendacoes; }
     public double getIqa() { return iqa; }
+    public String getClassificacaoIQA() { return classificarIQA(iqa); }
+    public double getMediaPm25() { return mediaPm25; }
+    public double getMediaPm10() { return mediaPm10; }
+    public double getMediaCo2() { return mediaCo2; }
+    public double getMediaTemperatura() { return mediaTemperatura; }
+    public double getMediaUmidade() { return mediaUmidade; }
+    public double getMediaRuido() { return mediaRuido; }
+    public double getMediaUV() { return mediaUV; }
     
     @Override
     public String toString() {

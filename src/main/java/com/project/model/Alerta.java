@@ -74,14 +74,6 @@ public class Alerta {
     private static List<Alerta> analisarQualidadeAr (DadosAmbientais dados) {
         List<Alerta> alertas = new ArrayList<>();
 
-
-        /**
-         * PM2.5 (Partículas finas)
-         * - Níveis acima de 150 µg/m³: Crítico
-         * - Níveis entre 55-150 µg/m³: Alto
-         * - Níveis entre 35-55 µg/m³: Médio
-         * - Níveis abaixo de 35 µg/m³: Baixo 
-         */
         if (dados.getPm25() > 150) {
             alertas.add(new Alerta(NivelAlerta.CRITICO, TipoAlerta.QUALIDADE_AR, 
                 "PM2.5 em nível PÉSSIMO (" + String.format("%.1f", dados.getPm25()) + " µg/m³). Evite atividades ao ar livre!", 
@@ -96,14 +88,6 @@ public class Alerta {
                 dados));
         }
 
-        /**
-         * PM10 (Partículas inaláveis)
-         * - Níveis acima de 250 µg/m³: Crítico
-         * - Níveis entre 150-250 µg/m³: Alto
-         * - Níveis entre 75-150 µg/m³: Médio
-         * - Níveis abaixo de 75 µg/m³: Baixo
-         */
-
          if (dados.getPm10() > 250) {
             alertas.add(new Alerta(NivelAlerta.CRITICO, TipoAlerta.QUALIDADE_AR, 
                 "PM10 em nível PÉSSIMO (" + String.format("%.1f", dados.getPm10()) + " µg/m³).", 
@@ -113,14 +97,6 @@ public class Alerta {
                 "PM10 em nível MUITO RUIM (" + String.format("%.1f", dados.getPm10()) + " µg/m³).", 
                 dados));
         }
-
-
-        /**
-         * CO2 (Dióxido de Carbono)
-         * - Níveis acima de 2000 ppm: Crítico
-         * - Níveis entre 1000-2000 ppm: Médio
-         * - Níveis abaixo de 1000 ppm: Baixo
-         */
 
         if (dados.getCo2() > 2000) {
             alertas.add(new Alerta(NivelAlerta.CRITICO, TipoAlerta.QUALIDADE_AR, 
@@ -139,15 +115,6 @@ public class Alerta {
     private static List<Alerta> analisarTemperatura (DadosAmbientais dados) {
         List<Alerta> alertas = new ArrayList<>();
 
-        /**
-         * Temperatura
-         * - Acima de 35°C: Crítico
-         * - Entre 30-35°C: Alto
-         * - Entre 15-30°C: Moderado
-         * - Entre 0-15°C: Baixo
-         * - Abaixo de 0°C: Crítico
-         */
-
         if (dados.getTemperatura() > 35) {
             alertas.add(new Alerta(NivelAlerta.CRITICO, TipoAlerta.TEMPERATURA, 
                 "Temperatura EXTREMA (" + String.format("%.1f", dados.getTemperatura()) + " °C). Risco de insolação!", 
@@ -163,14 +130,6 @@ public class Alerta {
 
     private static List<Alerta> analisarRuido (DadosAmbientais dados) {
         List<Alerta> alertas = new ArrayList<>();
-
-        /**
-         * Ruído
-         * - Acima de 100 dB: Crítico
-         * - Entre 85-100 dB: Alto
-         * - Entre 70-85 dB: Médio
-         * - Abaixo de 70 dB: Baixo
-         */
 
         if (dados.getRuido() > 100) {
             alertas.add(new Alerta(NivelAlerta.CRITICO, TipoAlerta.RUIDO, 
@@ -192,14 +151,6 @@ public class Alerta {
     private static List<Alerta> analisarRadiacaoUV (DadosAmbientais dados) {
         List<Alerta> alertas = new ArrayList<>();
 
-        /**
-         * Radiação UV
-         * - Acima de 11: Crítico
-         * - Entre 8-11: Alto
-         * - Entre 6-8: Médio
-         * - Abaixo de 6: Baixo
-         */
-
         if (dados.getRadiacao_uv() >= 11) {
             alertas.add(new Alerta(NivelAlerta.CRITICO, TipoAlerta.RADIACAO_UV, 
                 "Índice UV EXTREMO (" + String.format("%.1f", dados.getRadiacao_uv()) + "). Evite exposição ao sol!", 
@@ -219,13 +170,6 @@ public class Alerta {
 
     private static List<Alerta> analisarEnchente (DadosAmbientais dados) {
         List<Alerta> alertas = new ArrayList<>();
-
-        /**
-         * Umidade
-         * - Acima de 95%: Alto
-         * - Entre 90-95%: Médio
-         * - Abaixo de 90%: Baixo
-         */
 
         if (dados.getUmidade() > 95) {
             alertas.add(new Alerta(NivelAlerta.ALTO, TipoAlerta.ENCHENTE, 
@@ -252,7 +196,6 @@ public class Alerta {
         MEDIO("Moderado"),          // Risco moderado, monitoramento necessário
         BAIXO("Baixo");             // Risco baixo, situação normal
 
-        
         private final String descricao;
 
         NivelAlerta(String descricao) {
