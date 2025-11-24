@@ -1,0 +1,17 @@
+target/
+bin/
+*.class
+.classpath
+.settings
+.project
+
+.mvn/
+mvnw
+mvnw.cmd
+
+#.vscode
+*.log
+
+.env
+.project
+*.db
