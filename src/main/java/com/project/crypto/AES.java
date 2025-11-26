@@ -1,116 +1,83 @@
 package com.project.crypto;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.KeyGenerator;
-import javax.crypto.Cipher;
-import java.security.*;
+import java.security.GeneralSecurityException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Base64;
 
-import javax.crypto.BadPaddingException;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.NoSuchPaddingException;
 
+public class AES {
+    private static final Logger logger = LoggerFactory.getLogger(AES.class);
+    private static final String ALGORITHM = "AES";
+    private static final String CIPHER_TRANSFORM = "AES/GCM/NoPadding";
+    private static final int KEY_SIZE = 256;
+    private static final int IV_SIZE = 16; // 128 bits
 
- public class AES {
-        private KeyGenerator geradorDeChaves;
-        private SecretKey chave;
+    private final SecretKey key;
 
-        public AES() {
-            //gerarChave();
-        }
-
-        public void gerarChave() {
-            try {
-                geradorDeChaves = KeyGenerator
-                        .getInstance("AES");
-                chave = geradorDeChaves
-                        .generateKey();
-                System.out.println("Chave gerada: "
-                        + chave.toString());
-            } catch (NoSuchAlgorithmException e) {
-                e.printStackTrace();
-            }
-        }
-
-        public String cifrar(String textoAberto) {
-            String mensagemCifrada = null;
-            byte[] bytesMensagemCifrada;
-            Cipher cifrador;
-            // Encripta mensagem
-            try {
-                cifrador = Cipher
-                        .getInstance("AES/CBC/PKCS5Padding");
-
-                byte[] iv = new byte[16];
-                SecureRandom random = new SecureRandom();
-                random.nextBytes(iv);
-                IvParameterSpec ivParams = new IvParameterSpec(iv);
-
-                cifrador.init(Cipher.ENCRYPT_MODE, chave, ivParams);
-                bytesMensagemCifrada = cifrador.doFinal(textoAberto.getBytes());
-
-                byte[] mensagemComIv = new byte[iv.length + bytesMensagemCifrada.length];
-                System.arraycopy(iv, 0, mensagemComIv, 0, iv.length);
-                System.arraycopy(bytesMensagemCifrada, 0, mensagemComIv, iv.length, bytesMensagemCifrada.length);
-
-                mensagemCifrada = Base64
-                        .getEncoder()
-                        .encodeToString(mensagemComIv);
-                //System.out.println(">> Mensagem cifrada = "
-                //        + mensagemCifrada);
-            } catch (NoSuchAlgorithmException e) {
-                e.printStackTrace();
-            } catch (InvalidKeyException e) {
-                e.printStackTrace();
-            } catch (IllegalBlockSizeException e) {
-                e.printStackTrace();
-            } catch (BadPaddingException e) {
-                e.printStackTrace();
-            } catch (NoSuchPaddingException e) {
-                e.printStackTrace();
-            } catch (InvalidAlgorithmParameterException e) {
-                e.printStackTrace();
-            }
-            return mensagemCifrada;
-        }
-
-        public String decifrar(String textoCifrado) {
-            String mensagem = null;
-            // Decriptação
-            byte[] bytesMensagemCifradaComIv = Base64
-                    .getDecoder()
-                    .decode(textoCifrado);
-            Cipher decriptador;
-            try {
-                byte[] iv = new byte[16];
-                System.arraycopy(bytesMensagemCifradaComIv, 0, iv, 0, iv.length);
-                IvParameterSpec ivParams = new IvParameterSpec(iv);
-
-                byte[] bytesMensagemCifrada = new byte[bytesMensagemCifradaComIv.length - iv.length];
-                System.arraycopy(bytesMensagemCifradaComIv, iv.length, bytesMensagemCifrada, 0, bytesMensagemCifrada.length);
-
-                decriptador = Cipher.getInstance("AES/CBC/PKCS5Padding");
-                decriptador.init(Cipher.DECRYPT_MODE, chave, ivParams);
-                byte[] bytesMensagemDecifrada = decriptador.doFinal(bytesMensagemCifrada);
-                mensagem = new String(bytesMensagemDecifrada);
-                /*
-                 * System.out.println("<< Mensagem decifrada = "
-                 * + mensagemDecifrada);
-                 */
-            } catch (NoSuchAlgorithmException e) {
-                e.printStackTrace();
-            } catch (NoSuchPaddingException e) {
-                e.printStackTrace();
-            } catch (InvalidKeyException e) {
-                e.printStackTrace();
-            } catch (IllegalBlockSizeException e) {
-                e.printStackTrace();
-            } catch (BadPaddingException e) {
-                e.printStackTrace();
-            } catch (InvalidAlgorithmParameterException e) {
-                e.printStackTrace();
-            }
-            return mensagem;
-        }
+    public AES(SecretKey key) {
+        this.key = key;
     }
+
+    public static SecretKey generateKey() throws NoSuchAlgorithmException {
+        KeyGenerator keyGen = KeyGenerator.getInstance(ALGORITHM);
+        keyGen.init(KEY_SIZE); //TODO Testar a diferença de 128 e 256
+        SecretKey key = keyGen.generateKey();
+        logger.info("Generated AES Key ({} bits)", KEY_SIZE);
+        return key;
+    }
+
+    public String encrypt(String plainText) throws GeneralSecurityException {
+        byte[] iv = new byte[IV_SIZE];
+        new SecureRandom().nextBytes(iv);
+        IvParameterSpec ivParams = new IvParameterSpec(iv);
+
+        Cipher cipher = Cipher.getInstance(CIPHER_TRANSFORM);
+        cipher.init(Cipher.ENCRYPT_MODE, key, ivParams);
+        
+        // Passo 1 - Cifrar o texto
+        byte[] encryptedText = cipher.doFinal(plainText.getBytes());
+        
+        // Passo 2 - Concatenar IV e texto cifrado
+        byte[] encryptedIVAndText = new byte[IV_SIZE + encryptedText.length];
+        System.arraycopy(iv, 0, encryptedIVAndText, 0, IV_SIZE);
+        System.arraycopy(encryptedText, 0, encryptedIVAndText, IV_SIZE, encryptedText.length);
+
+        // Passo 3 - Retornar como Base64 o IV + texto cifrado
+        return Base64.getEncoder().encodeToString(encryptedIVAndText);
+    }
+
+    public String decrypt(String cypherText) throws GeneralSecurityException {
+        byte[] encryptedIVAndText = Base64.getDecoder().decode(cypherText);
+
+
+        // Extrair o IV da mensagem
+        byte[] iv = new byte[IV_SIZE];
+        System.arraycopy(encryptedIVAndText, 0, iv, 0, IV_SIZE);
+        IvParameterSpec ivParams = new IvParameterSpec(iv);
+
+
+        // Extrair o texto cifrado da mensagem
+        byte[] encryptedText = new byte[encryptedIVAndText.length - IV_SIZE];
+        System.arraycopy(encryptedIVAndText, IV_SIZE, encryptedText, 0, encryptedText.length);
+
+        Cipher cipher = Cipher.getInstance(CIPHER_TRANSFORM);
+        cipher.init(Cipher.DECRYPT_MODE, key, ivParams);
+        byte[] decryptedText = cipher.doFinal(encryptedText);
+
+        return new String(decryptedText);
+    }
+
+    public SecretKey getKey() {
+        return key;
+    }
+
+    
+}
