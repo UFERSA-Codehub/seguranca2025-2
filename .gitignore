@@ -18,4 +18,7 @@ mvnw.cmd
 *.pid
 relatorio_*.*
 .cache
-exemplos/
+.system-pids/
+
+# Ignorar pom de exemplos
+**/pom.xml
