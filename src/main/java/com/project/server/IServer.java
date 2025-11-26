@@ -1,5 +1,5 @@
 package com.project.server;
 
-public class Server {
+public class IServer {
     
 }

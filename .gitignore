@@ -18,3 +18,4 @@ mvnw.cmd
 *.pid
 relatorio_*.*
 .cache
+exemplos/

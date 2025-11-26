@@ -1,5 +1,5 @@
 package com.project.client;
 
-public class IClient {
+public class Client {
     
 }
