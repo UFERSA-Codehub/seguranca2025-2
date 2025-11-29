@@ -1,5 +1,8 @@
 package com.project.client;
 
-public class IClient {
-    
+public interface IClient {
+    void start();
+    void stop();
+    boolean isRunning();
+    String getName();
 }

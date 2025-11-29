@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Índice UV</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 20px; }
+        .uv-box { padding: 30px; border-radius: 15px; color: white; text-align: center; margin: 20px 0; }
+        .uv-box h2 { margin: 0; font-size: 3em; }
+        .uv-box p { margin: 10px 0 0; font-size: 1.3em; }
+        .uv-baixo { background: linear-gradient(135deg, #27ae60, #1e8449); }
+        .uv-moderado { background: linear-gradient(135deg, #f1c40f, #d4ac0d); color: #333; }
+        .uv-alto { background: linear-gradient(135deg, #e67e22, #d35400); }
+        .uv-muito-alto { background: linear-gradient(135deg, #e74c3c, #c0392b); }
+        .uv-extremo { background: linear-gradient(135deg, #8e44ad, #6c3483); }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+        th { background-color: #f39c12; color: white; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        .header { text-align: center; border-bottom: 2px solid #f39c12; padding-bottom: 10px; }
+        .recommendation { padding: 15px; background: #fff3cd; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f39c12; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>☀️ Índice de Radiação UV</h1>
+        <p>Gerado em: {{generatedAt}}</p>
+    </div>
+    
+    <div class="uv-box uv-{{uvLevel}}">
+        <h2>UV {{avgUv}}</h2>
+        <p>{{uvLevel}}</p>
+    </div>
+    
+    <div class="recommendation">
+        <strong>💡 Recomendação:</strong> {{recommendation}}
+    </div>
+    
+    <h3>📊 Leituras por Sensor</h3>
+    <table>
+        <tr>
+            <th>Sensor</th>
+            <th>Índice UV</th>
+        </tr>
+        {{#sensors}}
+        <tr>
+            <td>{{sensorId}}</td>
+            <td>{{uvIndex}}</td>
+        </tr>
+        {{/sensors}}
+    </table>
+    
+    <div style="margin-top: 30px; padding: 15px; background: #fef9e7; border-radius: 8px; border-left: 4px solid #f39c12;">
+        <h4>📋 Escala UV</h4>
+        <p><span style="color: #27ae60;">■</span> <strong>BAIXO (0-2):</strong> Sem proteção necessária</p>
+        <p><span style="color: #f1c40f;">■</span> <strong>MODERADO (3-5):</strong> Proteção recomendada</p>
+        <p><span style="color: #e67e22;">■</span> <strong>ALTO (6-7):</strong> Proteção necessária</p>
+        <p><span style="color: #e74c3c;">■</span> <strong>MUITO ALTO (8-10):</strong> Proteção extra necessária</p>
+        <p><span style="color: #8e44ad;">■</span> <strong>EXTREMO (11+):</strong> Evitar exposição ao sol</p>
+    </div>
+</body>
+</html>

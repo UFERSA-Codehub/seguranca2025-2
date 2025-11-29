@@ -1,5 +1,16 @@
 package com.project.server;
 
-public class IServer {
-    
+public interface IServer {
+    void start();
+
+    void stop();
+
+    boolean isRunning();
+
+    void showStatus();
+
+    String getName();
+
+    int getPort();
+
 }

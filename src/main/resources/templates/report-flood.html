@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Alerta de Enchente</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 20px; }
+        .alert-box { padding: 30px; border-radius: 15px; color: white; text-align: center; margin: 20px 0; }
+        .alert-box h2 { margin: 0; font-size: 2.5em; }
+        .alert-box p { margin: 10px 0 0; font-size: 1.3em; }
+        .critico { background: linear-gradient(135deg, #c0392b, #922b21); }
+        .atencao { background: linear-gradient(135deg, #f39c12, #d68910); }
+        .normal { background: linear-gradient(135deg, #27ae60, #1e8449); }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+        th { background-color: #2980b9; color: white; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        .header { text-align: center; border-bottom: 2px solid #2980b9; padding-bottom: 10px; }
+        .humidity-high { color: #c0392b; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌧️ Alerta de Enchente</h1>
+        <p>Gerado em: {{generatedAt}}</p>
+    </div>
+    
+    <div class="alert-box {{alertClass}}">
+        <h2>{{alertLevel}}</h2>
+        <p>Umidade Média: {{avgHumidity}}%</p>
+    </div>
+    
+    <div style="margin: 20px 0; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #f39c12;">
+        <strong>💡 Recomendação:</strong> {{recommendation}}
+    </div>
+    
+    <h3>📊 Leituras por Sensor</h3>
+    <table>
+        <tr>
+            <th>Sensor</th>
+            <th>Umidade (%)</th>
+            <th>Temperatura (°C)</th>
+        </tr>
+        {{#sensors}}
+        <tr>
+            <td>{{sensorId}}</td>
+            <td>{{humidity}}</td>
+            <td>{{temperature}}</td>
+        </tr>
+        {{/sensors}}
+    </table>
+    
+    <div style="margin-top: 30px; padding: 15px; background: #e8f4fd; border-radius: 8px; border-left: 4px solid #2980b9;">
+        <h4>ℹ️ Níveis de Alerta</h4>
+        <p><strong>NORMAL:</strong> Umidade &lt; 85% - Condições normais</p>
+        <p><strong>ATENÇÃO:</strong> Umidade 85-95% - Monitorar condições</p>
+        <p><strong>CRÍTICO:</strong> Umidade &gt; 95% - Risco elevado de alagamentos</p>
+    </div>
+</body>
+</html>

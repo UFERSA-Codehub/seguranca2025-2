@@ -10,7 +10,7 @@ mvnw
 mvnw.cmd
 
 #.vscode
-*.log
+#*.log
 
 .env
 .project
@@ -18,7 +18,7 @@ mvnw.cmd
 *.pid
 relatorio_*.*
 .cache
-.system-pids/
+#.system-pids/
 
 # Ignorar pom de exemplos
 **/pom.xml

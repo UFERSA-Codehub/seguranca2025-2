@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Previsão de Poluição</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 20px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin: 20px 0; }
+        .stat-box { padding: 20px; border-radius: 10px; text-align: center; color: white; }
+        .stat-box h3 { margin: 0; font-size: 2em; }
+        .stat-box p { margin: 5px 0 0; }
+        .co2 { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
+        .no2 { background: linear-gradient(135deg, #e74c3c, #c0392b); }
+        .pm25 { background: linear-gradient(135deg, #3498db, #2980b9); }
+        .status-badge { display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: bold; margin: 10px 0; }
+        .excelente { background: #27ae60; color: white; }
+        .aceitavel { background: #f39c12; color: white; }
+        .ruim { background: #e74c3c; color: white; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+        th { background-color: #8e44ad; color: white; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        .header { text-align: center; border-bottom: 2px solid #8e44ad; padding-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏭 Previsão de Poluição</h1>
+        <p>Gerado em: {{generatedAt}}</p>
+    </div>
+    
+    <div class="stats-grid">
+        <div class="stat-box co2">
+            <h3>{{avgCo2}}</h3>
+            <p>CO2 (ppm)</p>
+        </div>
+        <div class="stat-box no2">
+            <h3>{{avgNo2}}</h3>
+            <p>NO2 (µg/m³)</p>
+        </div>
+        <div class="stat-box pm25">
+            <h3>{{avgPm25}}</h3>
+            <p>PM2.5 (µg/m³)</p>
+        </div>
+    </div>
+    
+    <p style="text-align: center;">
+        Status CO2: <span class="status-badge {{co2StatusClass}}">{{co2Status}}</span>
+    </p>
+    
+    <div style="margin: 20px 0; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #f39c12;">
+        <strong>💡 Recomendação:</strong> {{recommendation}}
+    </div>
+    
+    <h3>📊 Leituras Detalhadas</h3>
+    <table>
+        <tr>
+            <th>Sensor</th>
+            <th>Timestamp</th>
+            <th>Temperatura</th>
+            <th>Umidade</th>
+            <th>CO2</th>
+        </tr>
+        {{#sensors}}
+        <tr>
+            <td>{{sensorId}}</td>
+            <td>{{timestamp}}</td>
+            <td>{{temperature}}°C</td>
+            <td>{{humidity}}%</td>
+            <td>{{co2}} ppm</td>
+        </tr>
+        {{/sensors}}
+    </table>
+    
+    <div style="margin-top: 30px; padding: 15px; background: #f5eef8; border-radius: 8px; border-left: 4px solid #8e44ad;">
+        <h4>📋 Classificação CO2</h4>
+        <p><strong>EXCELENTE:</strong> 350-450 ppm (Ar puro)</p>
+        <p><strong>ACEITÁVEL:</strong> 450-1000 ppm (Normal em ambientes fechados)</p>
+        <p><strong>RUIM:</strong> &gt;1000 ppm (Ar viciado, necessita ventilação)</p>
+    </div>
+</body>
+</html>

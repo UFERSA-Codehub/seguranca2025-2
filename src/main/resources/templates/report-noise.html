@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Mapa de Ruído</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 20px; }
+        .noise-box { padding: 30px; border-radius: 15px; color: white; text-align: center; margin: 20px 0; }
+        .noise-box h2 { margin: 0; font-size: 2.5em; }
+        .noise-box p { margin: 10px 0 0; font-size: 1.3em; }
+        .baixo { background: linear-gradient(135deg, #27ae60, #1e8449); }
+        .moderado { background: linear-gradient(135deg, #f39c12, #d68910); }
+        .alto { background: linear-gradient(135deg, #e74c3c, #c0392b); }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+        th { background-color: #e67e22; color: white; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        .header { text-align: center; border-bottom: 2px solid #e67e22; padding-bottom: 10px; }
+        .level-baixo { color: #27ae60; font-weight: bold; }
+        .level-moderado { color: #f39c12; font-weight: bold; }
+        .level-alto { color: #e74c3c; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔊 Mapa de Ruído Urbano</h1>
+        <p>Gerado em: {{generatedAt}}</p>
+    </div>
+    
+    <div class="noise-box {{noiseLevel}}">
+        <h2>{{avgNoise}} dB</h2>
+        <p>Nível: {{noiseLevel}}</p>
+    </div>
+    
+    <div style="margin: 20px 0; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #f39c12;">
+        <strong>💡 Recomendação:</strong> {{recommendation}}
+    </div>
+    
+    <h3>📊 Níveis por Sensor</h3>
+    <table>
+        <tr>
+            <th>Sensor</th>
+            <th>Ruído (dB)</th>
+            <th>Classificação</th>
+        </tr>
+        {{#sensors}}
+        <tr>
+            <td>{{sensorId}}</td>
+            <td>{{noiseLevel}} dB</td>
+            <td>{{classification}}</td>
+        </tr>
+        {{/sensors}}
+    </table>
+    
+    <div style="margin-top: 30px; padding: 15px; background: #fef5e7; border-radius: 8px; border-left: 4px solid #e67e22;">
+        <h4>📋 Referência de Níveis</h4>
+        <p><strong>BAIXO (&lt;50 dB):</strong> Biblioteca, quarto silencioso</p>
+        <p><strong>MODERADO (50-70 dB):</strong> Conversa normal, escritório</p>
+        <p><strong>ALTO (&gt;70 dB):</strong> Tráfego intenso, pode causar desconforto</p>
+    </div>
+</body>
+</html>

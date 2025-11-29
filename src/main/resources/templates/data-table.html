@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Dados dos Sensores</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #4CAF50; color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .alert { background-color: #ffcccc; }
+        .header { margin-bottom: 20px; }
+        .pagination { margin-top: 20px; display: flex; gap: 10px; align-items: center; }
+        .pagination a, .pagination span { 
+            padding: 8px 12px; 
+            border: 1px solid #ddd; 
+            text-decoration: none; 
+            color: #333;
+            border-radius: 4px;
+        }
+        .pagination a:hover { background-color: #f0f0f0; }
+        .pagination .current { background-color: #4CAF50; color: white; border-color: #4CAF50; }
+        .pagination .disabled { color: #ccc; pointer-events: none; }
+        .auto-refresh { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+        .auto-refresh input { cursor: pointer; }
+        .status-indicator { 
+            width: 10px; height: 10px; border-radius: 50%; 
+            display: inline-block; margin-right: 5px;
+        }
+        .status-indicator.active { background-color: #4CAF50; }
+        .status-indicator.paused { background-color: #ccc; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Dados dos Sensores</h1>
+        <div class="auto-refresh" style="margin-left:0;">
+            <span class="status-indicator" id="refresh-indicator"></span>
+            <label>
+                <input type="checkbox" id="auto-refresh" checked> Auto-refresh (5s)
+            </label>
+        </div>
+        <p>Gerado em: <span id="generatedAt">{{generatedAt}}</span></p>
+        <p>Mostrando <span id="pageCount">{{pageCount}}</span> de <span id="totalCount">{{count}}</span> leituras</p>
+    </div>
+    
+    <div id="table-container">
+    <table>
+        <tr>
+            <th>Sensor</th>
+            <th>Timestamp</th>
+            <th>Temperatura</th>
+            <th>Umidade</th>
+            <th>CO2</th>
+            <th>Alerta</th>
+        </tr>
+        {{#readings}}
+        <tr{{#isAlert}} class="alert"{{/isAlert}}>
+            <td>{{sensorId}}</td>
+            <td>{{timestamp}}</td>
+            <td>{{temperature}}°C</td>
+            <td>{{humidity}}%</td>
+            <td>{{co2}} ppm</td>
+            <td>{{#isAlert}}⚠️ {{alertType}}{{/isAlert}}{{^isAlert}}-{{/isAlert}}</td>
+        </tr>
+        {{/readings}}
+    </table>
+    </div>
+    
+    {{#showPagination}}
+    <div class="pagination">
+        {{#hasPrev}}
+        <a href="{{baseUrl}}?page={{prevPage}}&limit={{limit}}">« Anterior</a>
+        {{/hasPrev}}
+        {{^hasPrev}}
+        <span class="disabled">« Anterior</span>
+        {{/hasPrev}}
+        
+        <span class="current">Página {{page}} de {{totalPages}}</span>
+        
+        {{#hasNext}}
+        <a href="{{baseUrl}}?page={{nextPage}}&limit={{limit}}">Próxima »</a>
+        {{/hasNext}}
+        {{^hasNext}}
+        <span class="disabled">Próxima »</span>
+        {{/hasNext}}
+    </div>
+    {{/showPagination}}
+    
+    <script>
+        (function() {
+            const REFRESH_INTERVAL = 5000;
+            let refreshTimer = null;
+            const checkbox = document.getElementById('auto-refresh');
+            const indicator = document.getElementById('refresh-indicator');
+            
+            function updateIndicator(active) {
+                indicator.className = 'status-indicator ' + (active ? 'active' : 'paused');
+            }
+            
+            function refreshData() {
+                fetch(window.location.href)
+                    .then(r => r.text())
+                    .then(html => {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(html, 'text/html');
+                        
+                        // Atualizar tabela
+                        const newTable = doc.getElementById('table-container');
+                        if (newTable) {
+                            document.getElementById('table-container').innerHTML = newTable.innerHTML;
+                        }
+                        
+                        // Atualizar timestamp
+                        const newTime = doc.getElementById('generatedAt');
+                        if (newTime) {
+                            document.getElementById('generatedAt').textContent = newTime.textContent;
+                        }
+                        
+                        // Atualizar contadores
+                        const newPageCount = doc.getElementById('pageCount');
+                        const newTotalCount = doc.getElementById('totalCount');
+                        if (newPageCount) {
+                            document.getElementById('pageCount').textContent = newPageCount.textContent;
+                        }
+                        if (newTotalCount) {
+                            document.getElementById('totalCount').textContent = newTotalCount.textContent;
+                        }
+                    })
+                    .catch(err => console.error('Refresh failed:', err));
+            }
+            
+            function startRefresh() {
+                if (refreshTimer) clearInterval(refreshTimer);
+                refreshTimer = setInterval(refreshData, REFRESH_INTERVAL);
+                updateIndicator(true);
+            }
+            
+            function stopRefresh() {
+                if (refreshTimer) {
+                    clearInterval(refreshTimer);
+                    refreshTimer = null;
+                }
+                updateIndicator(false);
+            }
+            
+            checkbox.addEventListener('change', function() {
+                if (this.checked) {
+                    startRefresh();
+                } else {
+                    stopRefresh();
+                }
+            });
+            
+            // Iniciar auto-refresh
+            startRefresh();
+        })();
+    </script>
+</body>
+</html>
