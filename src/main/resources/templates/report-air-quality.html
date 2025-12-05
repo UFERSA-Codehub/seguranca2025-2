@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório: Qualidade do Ar</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 20px; }
+        .iqa-box { padding: 30px; border-radius: 15px; color: white; text-align: center; margin: 20px 0; }
+        .iqa-box h2 { margin: 0; font-size: 3em; }
+        .iqa-box p { margin: 10px 0 0; font-size: 1.5em; }
+        .boa { background: linear-gradient(135deg, #00e400, #00b300); }
+        .moderada { background: linear-gradient(135deg, #ffff00, #cccc00); color: #333; }
+        .ruim { background: linear-gradient(135deg, #ff7e00, #cc6600); }
+        .muito-ruim { background: linear-gradient(135deg, #ff0000, #cc0000); }
+        .pessima { background: linear-gradient(135deg, #8f3f97, #6b2d71); }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: center; }
+        th { background-color: #2c3e50; color: white; }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+        .pollutant-badge { display: inline-block; padding: 8px 16px; background: #e74c3c; color: white; border-radius: 20px; font-weight: bold; }
+        .header { text-align: center; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌍 Relatório de Qualidade do Ar</h1>
+        <p>Gerado em: {{generatedAt}}</p>
+    </div>
+    
+    <div class="iqa-box {{iqaClass}}">
+        <h2>IQA: {{iqaValue}}</h2>
+        <p>{{iqaClassification}}</p>
+    </div>
+    
+    <p style="text-align: center; font-size: 1.2em;">
+        Poluente Principal: <span class="pollutant-badge">{{mainPollutant}}</span>
+    </p>
+    
+    <div style="margin: 20px 0; padding: 15px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #f39c12;">
+        <strong>💡 Recomendação:</strong> {{recommendation}}
+    </div>
+    
+    <h3>📊 Detalhes por Sensor</h3>
+    <table>
+        <tr>
+            <th>Sensor</th>
+            <th>PM2.5 (µg/m³)</th>
+            <th>PM10 (µg/m³)</th>
+            <th>CO (ppm)</th>
+            <th>NO2 (µg/m³)</th>
+            <th>SO2 (µg/m³)</th>
+        </tr>
+        {{#sensors}}
+        <tr>
+            <td>{{sensorId}}</td>
+            <td>{{pm25}}</td>
+            <td>{{pm10}}</td>
+            <td>{{co}}</td>
+            <td>{{no2}}</td>
+            <td>{{so2}}</td>
+        </tr>
+        {{/sensors}}
+    </table>
+    
+    <div style="margin-top: 30px; padding: 15px; background: #eaecee; border-radius: 8px; border-left: 4px solid #2c3e50;">
+        <h4>📋 Legenda IQA</h4>
+        <p><span style="color: #00b300;">■</span> <strong>BOA (0-40)</strong></p>
+        <p><span style="color: #cccc00;">■</span> <strong>MODERADA (41-80)</strong></p>
+        <p><span style="color: #cc6600;">■</span> <strong>RUIM (81-120)</strong></p>
+        <p><span style="color: #cc0000;">■</span> <strong>MUITO RUIM (121-200)</strong></p>
+        <p><span style="color: #6b2d71;">■</span> <strong>PÉSSIMA (>200)</strong></p>
+    </div>
+</body>
+</html>

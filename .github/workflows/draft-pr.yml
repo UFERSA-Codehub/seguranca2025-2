@@ -1,0 +1,100 @@
+name: Auto Draft PR
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - master
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create-draft-pr:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Check if PR already exists
+      id: check-pr
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        BRANCH="${{ github.ref_name }}"
+        PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number // empty')
+        
+        if [ -z "$PR_NUMBER" ]; then
+          echo "pr_exists=false" >> $GITHUB_OUTPUT
+          echo "pr_number=" >> $GITHUB_OUTPUT
+        else
+          echo "pr_exists=true" >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Generate AI PR Summary
+      id: ai-summary
+      continue-on-error: true
+      env:
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        BRANCH: ${{ github.ref_name }}
+      run: |
+        chmod +x .github/scripts/generate-ai-summary.sh
+        .github/scripts/generate-ai-summary.sh
+
+    - name: Generate PR Body
+      id: generate-pr-body
+      env:
+        BRANCH: ${{ github.ref_name }}
+        AI_SUCCESS: ${{ steps.ai-summary.outputs.ai_success }}
+        AI_SUMMARY: ${{ steps.ai-summary.outputs.ai_summary }}
+        AI_FEATURES: ${{ steps.ai-summary.outputs.ai_features }}
+        AI_FIXES: ${{ steps.ai-summary.outputs.ai_fixes }}
+        AI_DOCS: ${{ steps.ai-summary.outputs.ai_docs }}
+        AI_OTHER: ${{ steps.ai-summary.outputs.ai_other }}
+      run: |
+        chmod +x .github/scripts/generate-pr-body.sh
+        .github/scripts/generate-pr-body.sh
+
+    - name: Create Draft PR
+      if: steps.check-pr.outputs.pr_exists == 'false'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        BRANCH="${{ github.ref_name }}"
+        
+        # Use AI-generated title if available, otherwise fallback to branch name
+        AI_SUCCESS="${{ steps.ai-summary.outputs.ai_success }}"
+        if [ "$AI_SUCCESS" = "true" ]; then
+          AI_TITLE="${{ steps.ai-summary.outputs.ai_title }}"
+          TITLE="🚧 $AI_TITLE"
+          echo "Using AI-generated title: $TITLE"
+        else
+          # Fallback: Generate PR title from branch name
+          TITLE=$(echo "$BRANCH" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
+          TITLE="🚧 $TITLE"
+          echo "Using fallback title from branch name: $TITLE"
+        fi
+        
+        # Create draft PR with generated body
+        gh pr create \
+          --draft \
+          --base master \
+          --head "$BRANCH" \
+          --title "$TITLE" \
+          --body-file pr_body.md
+
+    - name: Update Existing Draft PR Body
+      if: steps.check-pr.outputs.pr_exists == 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        PR_NUMBER="${{ steps.check-pr.outputs.pr_number }}"
+        
+        # Update PR body
+        gh pr edit "$PR_NUMBER" --body-file pr_body.md
+        
+        echo "✅ Updated PR #$PR_NUMBER with latest changes."

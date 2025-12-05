@@ -21,11 +21,15 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Classes Java
-DISCOVERY_CLASS="com.project.server.discovery.DiscoveryServerApp"
-DATACENTER_CLASS="com.project.server.datacenter.DatacenterApp"
-EDGE_CLASS="com.project.server.edge.EdgeServerApp"
-SENSOR_CLASS="com.project.sensors.SensorApp"
+# Classes Java - Servidores
+DISCOVERY_CLASS="com.project.server.discovery.ServerDiscovery"
+DATACENTER_CLASS="com.project.server.datacenter.ServerDatacenter"
+EDGE_CLASS="com.project.server.edge.ServerEdge"
+
+# Classes Java - Clientes
+SENSOR_CLASS="com.project.client.sensor.Sensor"
+MALICIOUS_SENSOR_CLASS="com.project.client.sensor.MaliciousSensor"
+CLIENT_APP_CLASS="com.project.client.ClientApp"
 
 # Delays (segundos)
 DISCOVERY_DELAY=1
@@ -33,19 +37,18 @@ DATACENTER_DELAY=3
 EDGE_DELAY=2
 SENSOR_DELAY=1
 
-# Configuração de sensores (ID|Nome|Localização|Senha)
-# Senhas devem corresponder às configuradas em GestorAutenticacao.java
+# Configuração de sensores (ID|PASSWORD)
+# Senhas devem corresponder às configuradas no ServerEdge
 declare -a SENSORS=(
-    "SENSOR_001|Sensor Parque Central|Parque Central|senha123"
-    "SENSOR_002|Sensor Zona Industrial|Zona Industrial|industrial456"
-    "SENSOR_003|Sensor Centro Comercial|Centro Comercial|comercial789"
-    "SENSOR_004|Sensor Área Residencial|Área Residencial|residencial321"
-    "SENSOR_999|Sensor Invasor|Local Desconhecido|senha_errada"
+    "SENSOR_001|senha123"
+    "SENSOR_002|senha456"
+    "SENSOR_003|senha789"
+    "SENSOR_004|senha321"
 )
 
-# Configuração do Edge Server
-EDGE_HOST="127.0.0.1"
-EDGE_PORT="5000"
+# Configuração do Discovery Server (Sensor conecta ao Discovery primeiro)
+DISCOVERY_HOST="localhost"
+DISCOVERY_PORT="4000"
 
 # Nome da sessão tmux
 TMUX_SESSION="system-monitor"
