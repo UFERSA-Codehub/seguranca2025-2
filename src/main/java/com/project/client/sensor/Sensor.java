@@ -20,8 +20,10 @@ public class Sensor {
     private final String discoveryHost;
     private final int discoveryPort;
 
-    private SecureUDPChannel channel;
+    private KeyManager keyManager;
+    private SecureUDPChannel udpChannel;
     private UdpClient udpClient;
+    private TcpClient tcpClient;
     private String jwtToken;
     private volatile boolean running;
 
@@ -35,10 +37,10 @@ public class Sensor {
     public void start() {
         logger.info("[Sensor {}] Iniciando...", sensorId);
         try {
-            KeyManager keyManager = new KeyManager();
+            this.keyManager = new KeyManager();
             DatagramSocket socket = new DatagramSocket();
             socket.setSoTimeout(TIMEOUT_MS);
-            this.channel = new SecureUDPChannel(sensorId, keyManager, socket);
+            this.udpChannel = new SecureUDPChannel(sensorId, keyManager, socket);
         } catch (NoSuchAlgorithmException e) {
             logger.error("[Sensor {}] Erro ao inicializar KeyManager: {}", sensorId, e.getMessage());
             return;
@@ -47,8 +49,8 @@ public class Sensor {
             return;
         }
 
-        // Inicializar cliente UDP
-        this.udpClient = new UdpClient(sensorId, channel, discoveryHost, discoveryPort);
+        this.udpClient = new UdpClient(sensorId, udpChannel, discoveryHost, discoveryPort);
+        this.tcpClient = new TcpClient(sensorId, keyManager);
 
         try {
             if (!udpClient.handshakeWithDiscovery()) { 
@@ -56,19 +58,28 @@ public class Sensor {
                 return;
             }
 
-            if (!udpClient.discoverEdge()) {
-                logger.warn("[Sensor {}] Nenhum Edge disponível", sensorId);
+            if (!udpClient.discoverServices()) {
+                logger.warn("[Sensor {}] Nenhum servico disponivel", sensorId);
                 return;
             }
 
-            if (!udpClient.handshakeWithEdge()) {
-                logger.warn("[Sensor {}] Falha no handshake com Edge", sensorId);
+            String authHost = udpClient.getAuthHost();
+            int authPort = udpClient.getAuthPort();
+            if (authHost == null) {
+                logger.warn("[Sensor {}] AuthServer nao disponivel", sensorId);
                 return;
             }
 
-            this.jwtToken = udpClient.authenticate(password);
+            this.jwtToken = tcpClient.authenticateWithAuthServer(authHost, authPort, password);
             if (jwtToken == null) {
-                logger.warn("[Sensor {}] Falha na autenticação com Edge", sensorId);
+                logger.warn("[Sensor {}] Falha na autenticacao com AuthServer", sensorId);
+                return;
+            }
+
+            String edgeHost = udpClient.getEdgeHost();
+            int edgePort = udpClient.getEdgePort();
+            if (!tcpClient.connectToEdge(edgeHost, edgePort)) {
+                logger.warn("[Sensor {}] Falha na conexao com Edge", sensorId);
                 return;
             }
 
@@ -87,7 +98,13 @@ public class Sensor {
             try {
                 SensorData data = SensorData.generateRandom(sensorId);
                 logger.info("[Sensor {}] {}", sensorId, data);
-                udpClient.sendData(data.toJson(), jwtToken);
+                if (!tcpClient.sendData(data.toJson(), jwtToken)) {
+                    logger.warn("[Sensor {}] Falha ao enviar dados - reconectando...", sensorId);
+                    if (!reconnectToEdge()) {
+                        logger.error("[Sensor {}] Falha ao reconectar - encerrando", sensorId);
+                        break;
+                    }
+                }
                 Thread.sleep(2000 + (int)(Math.random() * 1000));
             } catch (InterruptedException e) {
                 break;
@@ -96,10 +113,18 @@ public class Sensor {
         logger.info("[Sensor {}] Monitoramento encerrado", sensorId);
     }
 
+    private boolean reconnectToEdge() {
+        tcpClient.closeEdgeChannel();
+        return tcpClient.connectToEdge(udpClient.getEdgeHost(), udpClient.getEdgePort());
+    }
+
     public void stop() {
         this.running = false;
-        if (channel != null) {
-            channel.getSocket().close();
+        if (tcpClient != null) {
+            tcpClient.closeEdgeChannel();
+        }
+        if (udpChannel != null) {
+            udpChannel.getSocket().close();
         }
         logger.info("[Sensor {}] Parado", sensorId);
     }

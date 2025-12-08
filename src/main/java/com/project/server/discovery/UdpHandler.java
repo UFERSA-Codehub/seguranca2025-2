@@ -80,6 +80,7 @@ public class UdpHandler {
             case LOOK_DATACENTER -> handleLookDatacenter(senderId, envelope, clientAddress, clientPort);
             case REGISTER_EDGE -> handleRegisterEdge(senderId, envelope, clientAddress, clientPort);
             case REGISTER_DATACENTER -> handleRegisterDatacenter(senderId, envelope, clientAddress, clientPort);
+            case REGISTER_AUTH -> handleRegisterAuth(senderId, envelope, clientAddress, clientPort);
             case HEARTBEAT -> handleHeartbeat(senderId, envelope, clientAddress, clientPort);
             default -> logger.warn("Tipo de envelope desconhecido: {} de {} ({})", envelope.getType(), senderId, peerInfo);
         }
@@ -96,9 +97,26 @@ public class UdpHandler {
             logger.info("Nenhum EDGE disponível para {} ({})", senderId, peerInfo);
             response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.NOT_FOUND, "Nenhum EDGE disponível");
         } else {
-            ServiceInfo edge = registry.getFirstEdge();
-            String payload = edge.getHost() + ":" + edge.getPort();
-            response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.FOUND_EDGE, payload);
+            JsonObject responsePayload = new JsonObject();
+            
+            // Se firewall esta habilitado, retornar enderecos do PacketFilter
+            // Senao, retornar enderecos reais dos servidores internos
+            if (registry.isFirewallEnabled()) {
+                responsePayload.addProperty("edge", registry.getExternalEdgeAddress());
+                if (registry.hasAuthServers()) {
+                    responsePayload.addProperty("auth", registry.getExternalAuthAddress());
+                }
+                logger.debug("Retornando enderecos do PacketFilter para {} ({})", senderId, peerInfo);
+            } else {
+                ServiceInfo edge = registry.getFirstEdge();
+                responsePayload.addProperty("edge", edge.getHost() + ":" + edge.getPort());
+                if (registry.hasAuthServers()) {
+                    ServiceInfo auth = registry.getFirstAuthServer();
+                    responsePayload.addProperty("auth", auth.getHost() + ":" + auth.getPort());
+                }
+            }
+            
+            response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.FOUND_EDGE, responsePayload.toString());
         }
 
         if (response == null) {
@@ -200,6 +218,32 @@ public class UdpHandler {
         logger.info("REGISTER_OK enviado para {} ({})", senderId, peerInfo);
     }
 
+    private void handleRegisterAuth(String senderId, EnvelopeUDP envelope, InetAddress clientAddress, int clientPort) {
+        String peerInfo = clientAddress.getHostAddress() + ":" + clientPort;
+        logger.info("REGISTER_AUTH recebido de {} ({})", senderId, peerInfo);
+
+        String payload = envelope.getPayload();
+        if (payload == null) {
+            logger.error("Payload vazio em REGISTER_AUTH de {} ({})", senderId, peerInfo);
+            return;
+        }
+
+        JsonObject data = gson.fromJson(payload, JsonObject.class);
+        String authId = data.get("authId").getAsString();
+        int authPort = data.get("port").getAsInt();
+        String authHost = clientAddress.getHostAddress();
+
+        registry.registerAuthServer(authId, authHost, authPort);
+
+        MessageUDP response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.REGISTER_OK, "OK");
+        if (response == null) {
+            logger.error("Falha ao construir resposta REGISTER_OK para {} ({})", senderId, peerInfo);
+            return;
+        }
+        channel.send(response, clientAddress, clientPort);
+        logger.info("REGISTER_OK enviado para {} ({})", senderId, peerInfo);
+    }
+
     private void handleHeartbeat(String senderId, EnvelopeUDP envelope, InetAddress clientAddress, int clientPort) {
         String peerInfo = clientAddress.getHostAddress() + ":" + clientPort;
 
@@ -210,6 +254,11 @@ public class UdpHandler {
 
         if (registry.updateDatacenterLastSeen(senderId)) {
             logger.debug("HEARTBEAT de DATACENTER {} ({})", senderId, peerInfo);
+            return;
+        }
+
+        if (registry.updateAuthServerLastSeen(senderId)) {
+            logger.debug("HEARTBEAT de AUTH {} ({})", senderId, peerInfo);
             return;
         }
 

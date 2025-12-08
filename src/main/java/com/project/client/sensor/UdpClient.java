@@ -23,6 +23,8 @@ public class UdpClient {
 
     private String edgeHost;
     private int edgePort;
+    private String authHost;
+    private int authPort;
 
     public UdpClient(String sensorId, SecureUDPChannel channel, String discoveryHost, int discoveryPort) {
         this.sensorId = sensorId;
@@ -43,7 +45,7 @@ public class UdpClient {
         }
         MessageUDP challenge = packet.message();
         if (challenge == null || challenge.getType() != MessageTypeUDP.CHALLENGE) {
-            logger.error("[Sensor {}] Resposta inválida do Discovery", sensorId);
+            logger.error("[Sensor {}] Resposta invalida do Discovery", sensorId);
             return false;
         }
 
@@ -51,14 +53,13 @@ public class UdpClient {
             logger.error("[Sensor {}] Falha ao processar CHALLENGE do Discovery", sensorId);
             return false;
         }
-        logger.info("[Sensor {}] Handshake com Discovery concluído", sensorId);
+        logger.info("[Sensor {}] Handshake com Discovery concluido", sensorId);
         return true;
     }
 
-    public boolean discoverEdge() {
-        logger.info("[Sensor {}] Buscando Edge...", sensorId);
+    public boolean discoverServices() {
+        logger.info("[Sensor {}] Buscando servicos (Edge + AuthServer)...", sensorId);
 
-        // Enviar LOOK_EDGE com envelope cifrado
         MessageUDP lookEdge = channel.buildEncryptedEnvelope("DISCOVERY", MessageTypeUDP.LOOK_EDGE, "");
         if (lookEdge == null) {
             logger.error("[Sensor {}] Falha ao construir mensagem LOOK_EDGE", sensorId);
@@ -66,7 +67,6 @@ public class UdpClient {
         }
         channel.send(lookEdge, discoveryHost, discoveryPort);
 
-        // Receber resposta (envelope cifrado)
         ReceivedPacket packet = channel.receive();
         if (packet == null) {
             logger.error("[Sensor {}] Timeout aguardando resposta do Discovery", sensorId);
@@ -78,7 +78,6 @@ public class UdpClient {
             return false;
         }
 
-        // Verificar e decifrar envelope
         if (!channel.verify(response)) {
             logger.error("[Sensor {}] Falha ao verificar resposta do Discovery", sensorId);
             return false;
@@ -91,102 +90,32 @@ public class UdpClient {
         }
 
         if (envelope.getType() == MessageTypeUDP.NOT_FOUND) {
-            logger.error("[Sensor {}] Nenhum Edge disponível", sensorId);
+            logger.error("[Sensor {}] Nenhum servico disponivel", sensorId);
             return false;
         }
 
-        // Extrair host:port do payload
-        String payload = envelope.getPayload();
-        String[] parts = payload.split(":");
-        this.edgeHost = parts[0];
-        this.edgePort = Integer.parseInt(parts[1]);
-        logger.info("[Sensor {}] Edge encontrado: {}:{}", sensorId, edgeHost, edgePort);
+        JsonObject payload = gson.fromJson(envelope.getPayload(), JsonObject.class);
+        
+        if (payload.has("edge")) {
+            String[] edgeParts = payload.get("edge").getAsString().split(":");
+            this.edgeHost = edgeParts[0];
+            this.edgePort = Integer.parseInt(edgeParts[1]);
+            logger.info("[Sensor {}] Edge encontrado: {}:{}", sensorId, edgeHost, edgePort);
+        } else {
+            logger.error("[Sensor {}] Edge nao encontrado na resposta", sensorId);
+            return false;
+        }
+        
+        if (payload.has("auth")) {
+            String[] authParts = payload.get("auth").getAsString().split(":");
+            this.authHost = authParts[0];
+            this.authPort = Integer.parseInt(authParts[1]);
+            logger.info("[Sensor {}] AuthServer encontrado: {}:{}", sensorId, authHost, authPort);
+        } else {
+            logger.warn("[Sensor {}] AuthServer nao encontrado na resposta", sensorId);
+        }
+        
         return true;
-    }
-
-    public boolean handshakeWithEdge() {
-        logger.info("[Sensor {}] Handshake com Edge ({}:{})...", sensorId, edgeHost, edgePort);
-
-        channel.send(channel.buildHello(), edgeHost, edgePort);
-
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) {
-            logger.error("[Sensor {}] Timeout aguardando resposta do Edge", sensorId);
-            return false;
-        }
-        MessageUDP challenge = packet.message();
-        if (challenge == null || challenge.getType() != MessageTypeUDP.CHALLENGE) {
-            logger.error("[Sensor {}] Resposta inválida do Edge", sensorId);
-            return false;
-        }
-
-        if (!channel.handleChallenge(challenge)) {
-            logger.error("[Sensor {}] Falha ao processar CHALLENGE do Edge", sensorId);
-            return false;
-        }
-        logger.info("[Sensor {}] Handshake com Edge concluído", sensorId);
-        return true;
-    }
-
-    public String authenticate(String password) {
-        logger.info("[Sensor {}] Autenticando com Edge...", sensorId);
-
-        // Construir payload de autenticação
-        JsonObject authPayload = new JsonObject();
-        authPayload.addProperty("sensorId", sensorId);
-        authPayload.addProperty("password", password);
-
-        // Enviar AUTH com envelope cifrado
-        MessageUDP authMsg = channel.buildEncryptedEnvelope("EDGE", MessageTypeUDP.AUTH, authPayload.toString());
-        if (authMsg == null) {
-            logger.error("[Sensor {}] Falha ao construir mensagem AUTH", sensorId);
-            return null;
-        }
-        channel.send(authMsg, edgeHost, edgePort);
-
-        // Receber resposta (envelope cifrado)
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) {
-            logger.error("[Sensor {}] Timeout aguardando resposta de autenticação", sensorId);
-            return null;
-        }
-        MessageUDP response = packet.message();
-        if (response == null) {
-            logger.error("[Sensor {}] Resposta nula do Edge", sensorId);
-            return null;
-        }
-
-        // Verificar e decifrar envelope
-        if (!channel.verify(response)) {
-            logger.error("[Sensor {}] Falha ao verificar resposta de autenticação", sensorId);
-            return null;
-        }
-
-        EnvelopeUDP envelope = channel.decryptEnvelope("EDGE", response);
-        if (envelope == null) {
-            logger.error("[Sensor {}] Falha ao decifrar envelope de autenticação", sensorId);
-            return null;
-        }
-
-        if (envelope.getType() == MessageTypeUDP.AUTH_FAIL) {
-            logger.error("[Sensor {}] Autenticação falhou: {}", sensorId, envelope.getPayload());
-            return null;
-        }
-
-        // Extrair JWT do payload
-        String token = gson.fromJson(envelope.getPayload(), JsonObject.class).get("token").getAsString();
-        logger.info("[Sensor {}] Autenticado com sucesso", sensorId);
-        return token;
-    }
-
-    public void sendData(String dataJson, String jwtToken) {
-        // Usar buildEncryptedEnvelope com JWT token
-        MessageUDP dataMsg = channel.buildEncryptedEnvelope("EDGE", MessageTypeUDP.DATA, dataJson, jwtToken);
-        if (dataMsg == null) {
-            logger.error("[Sensor {}] Falha ao construir mensagem DATA", sensorId);
-            return;
-        }
-        channel.send(dataMsg, edgeHost, edgePort);
     }
 
     public String getEdgeHost() {
@@ -195,5 +124,13 @@ public class UdpClient {
 
     public int getEdgePort() {
         return edgePort;
+    }
+
+    public String getAuthHost() {
+        return authHost;
+    }
+
+    public int getAuthPort() {
+        return authPort;
     }
 }
