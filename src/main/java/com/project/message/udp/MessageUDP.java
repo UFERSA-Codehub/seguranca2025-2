@@ -12,6 +12,7 @@ public class MessageUDP {
     private String encryptedSessionKeys;            // Base64 RSA (CHALLENGE)
     private String encryptedPayload;                // Base64 (AES) (DATA)
     private String signature;                       // Base64 assinatura RSA do ciphertext
+    private String hmac;                             // Base64 HMAC do payload cifrado
     private String jwtToken;                        // JWT Token para autenticação/validação (OPCIONAL, para Sensor -> Edge)
 
     public MessageUDP() {
@@ -65,6 +66,11 @@ public class MessageUDP {
 
         public Builder signature(String signature){
             message.signature = signature;
+            return this;
+        }
+
+        public Builder hmac(String hmac){
+            message.hmac = hmac;
             return this;
         }
 
@@ -124,6 +130,14 @@ public class MessageUDP {
 
     public void setSignature(String signature) {
         this.signature = signature;
+    }
+
+    public String getHmac() {
+        return hmac;
+    }
+
+    public void setHmac(String hmac) {
+        this.hmac = hmac;
     }
 
     public String getJwtToken() {

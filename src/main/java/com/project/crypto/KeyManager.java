@@ -21,7 +21,9 @@ import java.security.NoSuchAlgorithmException;
 public class KeyManager {
     private static final Logger logger = LoggerFactory.getLogger(KeyManager.class);
 
-    private final Map<String, SecretKey> peerAESKeys;
+    public record SessionKeys(SecretKey aesKey, SecretKey hmacKey) {}
+
+    private final Map<String, SessionKeys> peerSessionKeys;
     private final KeyPair rsaKeyPair;
     private final Map<String, PublicKey> peerPublicKeys;
 
@@ -29,41 +31,54 @@ public class KeyManager {
         logger.debug("Inicializando KeyManager...");
         this.rsaKeyPair = RSA.generateKeyPair();
         this.peerPublicKeys = new ConcurrentHashMap<>();
-        this.peerAESKeys = new ConcurrentHashMap<>();
+        this.peerSessionKeys = new ConcurrentHashMap<>();
         logger.debug("KeyManager inicializado com par de chaves RSA");
     }
 
     public void generateSessionKeys(String peerId) throws NoSuchAlgorithmException {
-        logger.debug("Gerando chave de sessão para peer '{}' ...", peerId);
+        logger.debug("Gerando chaves de sessão para peer '{}' ...", peerId);
 
         SecretKey aesKey = AES.generateKey();
-        peerAESKeys.put(peerId, aesKey);
+        SecretKey hmacKey = HMAC.generateKey();
+        peerSessionKeys.put(peerId, new SessionKeys(aesKey, hmacKey));
 
-        logger.debug("Chave de sessão gerada e armazenada para peer '{}' ", peerId);
+        logger.debug("Chaves de sessão (AES + HMAC) geradas e armazenadas para peer '{}' ", peerId);
     }
 
-    public void storeSessionKeys(String peerId, SecretKey aesKey) {
-        logger.debug("Armazenando chave de sessão para peer '{}' ...", peerId);
+    public void storeSessionKeys(String peerId, SecretKey aesKey, SecretKey hmacKey) {
+        logger.debug("Armazenando chaves de sessão para peer '{}' ...", peerId);
 
-        peerAESKeys.put(peerId, aesKey);
+        peerSessionKeys.put(peerId, new SessionKeys(aesKey, hmacKey));
 
-        logger.debug("Chave de sessão armazenada para peer '{}': AES", peerId);
+        logger.debug("Chaves de sessão armazenadas para peer '{}': AES + HMAC", peerId);
     }
 
     public SecretKey getPeerAESKey(String peerId) {
         logger.debug("Procurando chave AES de sessão para peer '{}' ...", peerId);
 
-        SecretKey aesKey = peerAESKeys.get(peerId);
+        SessionKeys keys = peerSessionKeys.get(peerId);
+        SecretKey aesKey = keys != null ? keys.aesKey() : null;
         
         logger.debug("Resultado da busca: {}", aesKey != null ? "ENCONTRADA ✓" : "NÃO ENCONTRADA ✗");
 
         return aesKey;
     }
 
-    public boolean hasSessionKeys(String peerId) {
-        boolean hasKeys = peerAESKeys.containsKey(peerId);
+    public SecretKey getPeerHMACKey(String peerId) {
+        logger.debug("Procurando chave HMAC de sessão para peer '{}' ...", peerId);
 
-        logger.debug("Verificando existência de chave de sessão para peer '{}' : {}",
+        SessionKeys keys = peerSessionKeys.get(peerId);
+        SecretKey hmacKey = keys != null ? keys.hmacKey() : null;
+        
+        logger.debug("Resultado da busca: {}", hmacKey != null ? "ENCONTRADA ✓" : "NÃO ENCONTRADA ✗");
+
+        return hmacKey;
+    }
+
+    public boolean hasSessionKeys(String peerId) {
+        boolean hasKeys = peerSessionKeys.containsKey(peerId);
+
+        logger.debug("Verificando existência de chaves de sessão para peer '{}' : {}",
         peerId,
         hasKeys ? "EXISTE ✓" : "NÃO EXISTE ✗");
 
@@ -71,37 +86,43 @@ public class KeyManager {
     }
 
     public String encryptSessionKeysForPeer(String peerId) throws GeneralSecurityException {
-        logger.debug("Serializando e cifrando chave de sessão para peer '{}'...", peerId);
+        logger.debug("Serializando e cifrando chaves de sessão para peer '{}'...", peerId);
         
-        SecretKey aesKey = peerAESKeys.get(peerId);
+        SessionKeys keys = peerSessionKeys.get(peerId);
         
-        if (aesKey == null) {
-            logger.error("Chave de sessão não encontrada para peer: {}", peerId);
-            throw new IllegalArgumentException("Chave de sessão não encontrada para peer: " + peerId);
+        if (keys == null) {
+            logger.error("Chaves de sessão não encontradas para peer: {}", peerId);
+            throw new IllegalArgumentException("Chaves de sessão não encontradas para peer: " + peerId);
         }
         
-        String keysData = Base64.getEncoder().encodeToString(aesKey.getEncoded());
+        String aesBase64 = Base64.getEncoder().encodeToString(keys.aesKey().getEncoded());
+        String hmacBase64 = Base64.getEncoder().encodeToString(keys.hmacKey().getEncoded());
+        String keysData = aesBase64 + ":" + hmacBase64;
         
         byte[] encrypted = encryptForPeer(peerId, keysData.getBytes());
         String result = Base64.getEncoder().encodeToString(encrypted);
         
-        logger.debug("Chave de sessão cifrada para peer '{}': {} chars", peerId, result.length());
+        logger.debug("Chaves de sessão cifradas para peer '{}': {} chars", peerId, result.length());
         return result;
     }
 
     public void decryptAndStoreSessionKeys(String peerId, String encryptedKeys) throws GeneralSecurityException {
-        logger.debug("Decifrando e armazenando chave de sessão do peer '{}'...", peerId);
+        logger.debug("Decifrando e armazenando chaves de sessão do peer '{}'...", peerId);
         
         byte[] encrypted = Base64.getDecoder().decode(encryptedKeys);
         byte[] decrypted = decrypt(encrypted);
         String keysData = new String(decrypted);
         
-        byte[] aesKeyBytes = Base64.getDecoder().decode(keysData);
+        String[] parts = keysData.split(":");
+        byte[] aesKeyBytes = Base64.getDecoder().decode(parts[0]);
+        byte[] hmacKeyBytes = Base64.getDecoder().decode(parts[1]);
+        
         SecretKey aesKey = new SecretKeySpec(aesKeyBytes, "AES");
+        SecretKey hmacKey = new SecretKeySpec(hmacKeyBytes, "HmacSHA256");
         
-        storeSessionKeys(peerId, aesKey);
+        storeSessionKeys(peerId, aesKey, hmacKey);
         
-        logger.debug("Chave de sessão decifrada e armazenada para peer '{}'", peerId);
+        logger.debug("Chaves de sessão decifradas e armazenadas para peer '{}'", peerId);
     }
 
     public void storePeerKey(String peerId, PublicKey publicKey) {
@@ -209,7 +230,7 @@ public class KeyManager {
         logger.debug("Removendo todas as chaves do peer '{}'...", peerId);
         
         peerPublicKeys.remove(peerId);
-        peerAESKeys.remove(peerId);
+        peerSessionKeys.remove(peerId);
         
         logger.info("Chaves removidas para peer '{}' (públicas + sessão)", peerId);
     }
