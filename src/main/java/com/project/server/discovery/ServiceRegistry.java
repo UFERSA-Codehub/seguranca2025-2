@@ -22,8 +22,18 @@ public class ServiceRegistry {
     // Tempo máximo sem heartbeat antes de remover serviço (60s)
     private static final long HEARTBEAT_TIMEOUT_MS = 60_000;
 
+    // Configuracao do PacketFilter (DMZ)
+    private static final String PACKET_FILTER_HOST = "localhost";
+    private static final int PACKET_FILTER_AUTH_PORT = 3000;
+    private static final int PACKET_FILTER_EDGE_PORT = 3010;
+    private static final int PACKET_FILTER_DATACENTER_PORT = 3020;
+
+    // Flag para habilitar roteamento via firewall
+    private boolean firewallEnabled = true;
+
     private final Map<String, ServiceInfo> registeredEdges;
     private final Map<String, ServiceInfo> registeredDatacenters;
+    private final Map<String, ServiceInfo> registeredAuthServers;
     private final SecureUDPChannel channel;
     private ScheduledExecutorService scheduler;
 
@@ -31,6 +41,7 @@ public class ServiceRegistry {
         this.channel = channel;
         this.registeredEdges = new ConcurrentHashMap<>();
         this.registeredDatacenters = new ConcurrentHashMap<>();
+        this.registeredAuthServers = new ConcurrentHashMap<>();
     }
 
     public void startTimeoutChecker() {
@@ -63,6 +74,7 @@ public class ServiceRegistry {
         long now = System.currentTimeMillis();
         List<String> expiredEdges = new ArrayList<>();
         List<String> expiredDatacenters = new ArrayList<>();
+        List<String> expiredAuthServers = new ArrayList<>();
 
         // Verificar Edges
         for (Map.Entry<String, ServiceInfo> entry : registeredEdges.entrySet()) {
@@ -75,6 +87,13 @@ public class ServiceRegistry {
         for (Map.Entry<String, ServiceInfo> entry : registeredDatacenters.entrySet()) {
             if (now - entry.getValue().getLastSeen() > HEARTBEAT_TIMEOUT_MS) {
                 expiredDatacenters.add(entry.getKey());
+            }
+        }
+
+        // Verificar AuthServers
+        for (Map.Entry<String, ServiceInfo> entry : registeredAuthServers.entrySet()) {
+            if (now - entry.getValue().getLastSeen() > HEARTBEAT_TIMEOUT_MS) {
+                expiredAuthServers.add(entry.getKey());
             }
         }
 
@@ -91,6 +110,13 @@ public class ServiceRegistry {
             channel.clearPeerSession(dcId);
             logger.warn("DATACENTER {} removido por timeout de heartbeat", dcId);
         }
+
+        // Remover AuthServers expirados
+        for (String authId : expiredAuthServers) {
+            registeredAuthServers.remove(authId);
+            channel.clearPeerSession(authId);
+            logger.warn("AUTH {} removido por timeout de heartbeat", authId);
+        }
     }
 
     public void registerEdge(String serviceId, String host, int port) {
@@ -102,6 +128,11 @@ public class ServiceRegistry {
         registeredDatacenters.put(serviceId, new ServiceInfo(serviceId, "DATACENTER", host, tcpPort, httpPort));
         logger.info("DATACENTER TCP registrado: {}@{}:{}", serviceId, host, tcpPort);
         logger.info("DATACENTER HTTP registrado: {}@{}:{}", serviceId, host, httpPort);
+    }
+
+    public void registerAuthServer(String serviceId, String host, int port) {
+        registeredAuthServers.put(serviceId, new ServiceInfo(serviceId, "AUTH", host, port));
+        logger.info("AUTH registrado: {}@{}:{}", serviceId, host, port);
     }
 
     public boolean updateEdgeLastSeen(String edgeId) {
@@ -122,6 +153,15 @@ public class ServiceRegistry {
         return false;
     }
 
+    public boolean updateAuthServerLastSeen(String authId) {
+        ServiceInfo auth = registeredAuthServers.get(authId);
+        if (auth != null) {
+            auth.updateLastSeen();
+            return true;
+        }
+        return false;
+    }
+
     public ServiceInfo getFirstEdge() {
         if (registeredEdges.isEmpty()) {
             return null;
@@ -136,6 +176,13 @@ public class ServiceRegistry {
         return registeredDatacenters.values().iterator().next();
     }
 
+    public ServiceInfo getFirstAuthServer() {
+        if (registeredAuthServers.isEmpty()) {
+            return null;
+        }
+        return registeredAuthServers.values().iterator().next();
+    }
+
     public boolean hasEdges() {
         return !registeredEdges.isEmpty();
     }
@@ -144,11 +191,42 @@ public class ServiceRegistry {
         return !registeredDatacenters.isEmpty();
     }
 
+    public boolean hasAuthServers() {
+        return !registeredAuthServers.isEmpty();
+    }
+
     public int getEdgeCount() {
         return registeredEdges.size();
     }
 
     public int getDatacenterCount() {
         return registeredDatacenters.size();
+    }
+
+    public int getAuthServerCount() {
+        return registeredAuthServers.size();
+    }
+
+    // ==================== FIREWALL ROUTING ====================
+
+    public boolean isFirewallEnabled() {
+        return firewallEnabled;
+    }
+
+    public void setFirewallEnabled(boolean enabled) {
+        this.firewallEnabled = enabled;
+        logger.info("Firewall routing {}", enabled ? "habilitado" : "desabilitado");
+    }
+
+    public String getExternalAuthAddress() {
+        return PACKET_FILTER_HOST + ":" + PACKET_FILTER_AUTH_PORT;
+    }
+
+    public String getExternalEdgeAddress() {
+        return PACKET_FILTER_HOST + ":" + PACKET_FILTER_EDGE_PORT;
+    }
+
+    public String getExternalDatacenterAddress() {
+        return PACKET_FILTER_HOST + ":" + PACKET_FILTER_DATACENTER_PORT;
     }
 }

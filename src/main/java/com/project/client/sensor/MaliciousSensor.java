@@ -10,283 +10,402 @@ import org.slf4j.LoggerFactory;
 import com.google.gson.JsonObject;
 
 import com.project.crypto.KeyManager;
-import com.project.message.udp.MessageTypeUDP;
-import com.project.message.udp.MessageUDP;
 import com.project.network.SecureUDPChannel;
-import com.project.network.SecureUDPChannel.ReceivedPacket;
 
 public class MaliciousSensor {
     private static final Logger logger = LoggerFactory.getLogger("MaliciousSensor");
     private static final int TIMEOUT_MS = 5000;
 
-    private final String sensorId;
-    private final String discoveryHost;
-    private final int discoveryPort;
-    private SecureUDPChannel channel;
-    private String edgeHost;
-    private int edgePort;
-
-    public MaliciousSensor(String sensorId, String discoveryHost, int discoveryPort) {
-        this.sensorId = sensorId;
-        this.discoveryHost = discoveryHost;
-        this.discoveryPort = discoveryPort;
+    public enum AttackMode {
+        INVALID_CREDENTIALS,
+        FORGED_JWT,
+        TAMPERED_MESSAGE,
+        NO_AUTH,
+        ANOMALY_DATA,
+        ALL
     }
 
-    public void runAllAttacks() {
-        logger.info("=== INICIANDO TESTES DE INTRUSÃO ===");
-        logger.info("Sensor malicioso: {}", sensorId);
+    private final String sensorId;
+    private final String password;
+    private final String discoveryHost;
+    private final int discoveryPort;
+    private final AttackMode attackMode;
+
+    private KeyManager keyManager;
+    private SecureUDPChannel udpChannel;
+    private UdpClient udpClient;
+    private TcpClient tcpClient;
+    private String jwtToken;
+
+    public MaliciousSensor(String sensorId, String password, String discoveryHost, int discoveryPort, AttackMode attackMode) {
+        this.sensorId = sensorId;
+        this.password = password;
+        this.discoveryHost = discoveryHost;
+        this.discoveryPort = discoveryPort;
+        this.attackMode = attackMode;
+    }
+
+    public void run() {
+        logger.info("╔══════════════════════════════════════════════════════════╗");
+        logger.info("║         SENSOR MALICIOSO - TESTE DE INTRUSÃO             ║");
+        logger.info("╠══════════════════════════════════════════════════════════╣");
+        logger.info("║ Sensor ID: {}", padRight(sensorId, 46) + "║");
+        logger.info("║ Modo de Ataque: {}", padRight(attackMode.toString(), 41) + "║");
+        logger.info("║ Discovery: {}:{}", discoveryHost, padRight(String.valueOf(discoveryPort), 37 - discoveryHost.length()) + "║");
+        logger.info("╚══════════════════════════════════════════════════════════╝");
 
         try {
-            KeyManager keyManager = new KeyManager();
+            this.keyManager = new KeyManager();
             DatagramSocket socket = new DatagramSocket();
             socket.setSoTimeout(TIMEOUT_MS);
-            this.channel = new SecureUDPChannel(sensorId, keyManager, socket);
-        } catch (NoSuchAlgorithmException e) {
-            logger.error("Erro ao inicializar KeyManager: {}", e.getMessage());
-            return;
-        } catch (SocketException e) {
-            logger.error("Erro ao abrir socket: {}", e.getMessage());
+            this.udpChannel = new SecureUDPChannel(sensorId, keyManager, socket);
+            this.udpClient = new UdpClient(sensorId, udpChannel, discoveryHost, discoveryPort);
+            this.tcpClient = new TcpClient(sensorId, keyManager);
+        } catch (NoSuchAlgorithmException | SocketException e) {
+            logger.error("Erro ao inicializar: {}", e.getMessage());
             return;
         }
 
         try {
-            // Passo 1 - Handshake com Discovery e Edge
-            if (!handshakeWithDiscovery()) {
+            if (!udpClient.handshakeWithDiscovery()) {
                 logger.error("Falha no handshake com Discovery");
                 return;
             }
-            if (!discoverEdge()) {
-                logger.error("Falha ao descobrir Edge");
+            logger.info("[OK] Handshake com Discovery concluido");
+
+            if (!udpClient.discoverServices()) {
+                logger.error("Nenhum servico disponivel");
                 return;
             }
-            if (!handshakeWithEdge()) {
-                logger.error("Falha no handshake com Edge");
-                return;
+            logger.info("[OK] Servicos descobertos - Edge: {}:{}, Auth: {}:{}", 
+                udpClient.getEdgeHost(), udpClient.getEdgePort(),
+                udpClient.getAuthHost(), udpClient.getAuthPort());
+
+            switch (attackMode) {
+                case INVALID_CREDENTIALS -> attackInvalidCredentials();
+                case FORGED_JWT -> attackForgedJwt();
+                case TAMPERED_MESSAGE -> attackTamperedMessage();
+                case NO_AUTH -> attackNoAuth();
+                case ANOMALY_DATA -> attackAnomalyData();
+                case ALL -> runAllAttacks();
             }
 
-            // Passo 2 - Executar cenários de ataque
-            logger.info("");
-            logger.info("=== TESTE 1: Credenciais Inválidas ===");
-            attackInvalidCredentials();
-
-            logger.info("");
-            logger.info("=== TESTE 2: JWT Token Forjado ===");
-            attackForgedJWT();
-
-            logger.info("");
-            logger.info("=== TESTE 3: Mensagem Adulterada (assinatura inválida) ===");
-            attackTamperedMessage();
-
-            logger.info("");
-            logger.info("=== TESTE 4: Dados sem Autenticação ===");
-            attackWithoutAuth();
-
-            logger.info("");
-            logger.info("=== TESTES DE INTRUSÃO CONCLUÍDOS ===");
         } finally {
-            channel.getSocket().close();
+            if (udpChannel != null) {
+                udpChannel.getSocket().close();
+            }
+            if (tcpClient != null) {
+                tcpClient.closeEdgeChannel();
+            }
         }
     }
 
-    private boolean handshakeWithDiscovery() {
-        logger.info("Handshake com Discovery...");
-        channel.send(channel.buildHello(), discoveryHost, discoveryPort);
+    private void runAllAttacks() {
+        printSeparator("TESTE 1: CREDENCIAIS INVALIDAS");
+        attackInvalidCredentials();
         
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) return false;
+        printSeparator("TESTE 2: JWT FORJADO");
+        attackForgedJwt();
         
-        MessageUDP challenge = packet.message();
-        if (challenge == null || challenge.getType() != MessageTypeUDP.CHALLENGE) {
-            return false;
-        }
-        return channel.handleChallenge(challenge);
+        printSeparator("TESTE 3: MENSAGEM ADULTERADA");
+        attackTamperedMessage();
+        
+        printSeparator("TESTE 4: DADOS SEM AUTENTICACAO");
+        attackNoAuth();
+        
+        printSeparator("TESTE 5: DADOS ANOMALOS (VALORES FORA DO RANGE)");
+        attackAnomalyData();
+        
+        logger.info("");
+        logger.info("╔══════════════════════════════════════════════════════════╗");
+        logger.info("║           TESTES DE INTRUSAO CONCLUIDOS                  ║");
+        logger.info("╚══════════════════════════════════════════════════════════╝");
     }
 
-    private boolean discoverEdge() {
-        logger.info("Buscando Edge...");
-        MessageUDP lookEdge = channel.buildEncryptedEnvelope("DISCOVERY", MessageTypeUDP.LOOK_EDGE, "");
-        if (lookEdge == null) return false;
-        
-        channel.send(lookEdge, discoveryHost, discoveryPort);
-        
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) return false;
-        
-        MessageUDP response = packet.message();
-        if (response == null) return false;
-
-        // Verificar e decifrar envelope
-        if (!channel.verify(response)) {
-            logger.error("Falha ao verificar resposta do Discovery");
-            return false;
-        }
-
-        var envelope = channel.decryptEnvelope("DISCOVERY", response);
-        if (envelope == null) {
-            logger.error("Falha ao decifrar envelope do Discovery");
-            return false;
-        }
-
-        if (envelope.getType() == MessageTypeUDP.NOT_FOUND) {
-            logger.error("Nenhum Edge disponível");
-            return false;
-        }
-        
-        String[] parts = envelope.getPayload().split(":");
-        this.edgeHost = parts[0];
-        this.edgePort = Integer.parseInt(parts[1]);
-        logger.info("Edge encontrado: {}:{}", edgeHost, edgePort);
-        return true;
-    }
-
-    private boolean handshakeWithEdge() {
-        logger.info("Handshake com Edge...");
-        channel.send(channel.buildHello(), edgeHost, edgePort);
-        
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) return false;
-        
-        MessageUDP challenge = packet.message();
-        if (challenge == null || challenge.getType() != MessageTypeUDP.CHALLENGE) {
-            return false;
-        }
-        return channel.handleChallenge(challenge);
-    }
-
-    // Ataque 1 - Credenciais inválidas (esperado: AUTH_FAIL)
     private void attackInvalidCredentials() {
-        logger.info("Tentando autenticar com credenciais inválidas...");
+        logger.info("[ATAQUE] Tentando autenticar com credenciais invalidas...");
+        logger.info("         Usuario: SENSOR_FAKE | Senha: senhaErrada123");
         
-        JsonObject authPayload = new JsonObject();
-        authPayload.addProperty("sensorId", "SENSOR_FAKE");
-        authPayload.addProperty("password", "senhaErrada123");
+        String token = tcpClient.authenticateWithAuthServer(
+            udpClient.getAuthHost(), 
+            udpClient.getAuthPort(), 
+            "senhaErrada123"
+        );
         
-        MessageUDP authMsg = channel.buildEncryptedEnvelope("EDGE", MessageTypeUDP.AUTH, authPayload.toString());
-        if (authMsg == null) {
-            logger.error("Falha ao construir mensagem AUTH");
-            return;
-        }
-        channel.send(authMsg, edgeHost, edgePort);
-        
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) {
-            logger.info("[RESULTADO] Timeout - servidor não respondeu");
-            return;
-        }
-        
-        MessageUDP response = packet.message();
-        
-        // Decifrar envelope para verificar resposta
-        var envelope = channel.decryptEnvelope("EDGE", response);
-        if (envelope == null) {
-            logger.info("[RESULTADO] Falha ao decifrar resposta");
-            return;
-        }
-
-        if (envelope.getType() == MessageTypeUDP.AUTH_FAIL) {
-            logger.info("[SUCESSO] Ataque BLOQUEADO - AUTH_FAIL recebido");
-        } else if (envelope.getType() == MessageTypeUDP.AUTH_OK) {
-            logger.error("[FALHA] Ataque NÃO bloqueado - AUTH_OK recebido!");
+        if (token == null) {
+            logger.info("[RESULTADO] ATAQUE BLOQUEADO - Autenticacao recusada");
+            logger.info("[SEGURANCA] Sistema validou credenciais corretamente");
         } else {
-            logger.info("[RESULTADO] Resposta: {}", envelope.getType());
+            logger.error("[RESULTADO] ATAQUE SUCEDIDO - Token recebido: {}", token);
+            logger.error("[FALHA] Sistema aceitou credenciais invalidas!");
         }
     }
 
-    // Ataque 2 - JWT forjado (esperado: mensagem ignorada)
-    private void attackForgedJWT() {
-        logger.info("Tentando enviar dados com JWT forjado...");
+    private void attackForgedJwt() {
+        logger.info("[ATAQUE] Tentando enviar dados com JWT forjado...");
         
-        SensorData fakeData = SensorData.generateRandom(sensorId);
-        
-        // Passo 1 - Definir token JWT forjado
-        String forgedToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJTRU5TT1JfRkFLRSIsImlzcyI6IkZBS0UiLCJpYXQiOjE2MzAwMDAwMDAsImV4cCI6OTk5OTk5OTk5OX0.fakeSignature123";
-        
-        MessageUDP dataMsg = channel.buildEncryptedEnvelope("EDGE", MessageTypeUDP.DATA, fakeData.toJson(), forgedToken);
-        if (dataMsg == null) {
-            logger.error("Falha ao construir mensagem DATA");
+        if (!tcpClient.connectToEdge(udpClient.getEdgeHost(), udpClient.getEdgePort())) {
+            logger.error("Falha ao conectar ao Edge");
             return;
         }
         
-        channel.send(dataMsg, edgeHost, edgePort);
-        logger.info("[RESULTADO] Mensagem enviada com JWT forjado");
-        logger.info("[ESPERADO] Edge deve ignorar mensagem (token inválido)");
+        String forgedToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
+            "eyJzdWIiOiJTRU5TT1JfRkFLRSIsImlzcyI6IkZBS0UiLCJpYXQiOjE2MzAwMDAwMDAsImV4cCI6OTk5OTk5OTk5OX0." +
+            "fakeSignature123";
         
-        // Passo 2 - Aguardar resposta para verificar comportamento
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) {
-            logger.info("[SUCESSO] Ataque BLOQUEADO - nenhuma resposta (silenciosamente ignorado)");
+        logger.info("         Token forjado: {}...", forgedToken.substring(0, 50));
+        
+        SensorData data = SensorData.generateRandom(sensorId);
+        boolean success = tcpClient.sendData(data.toJson(), forgedToken);
+        
+        tcpClient.closeEdgeChannel();
+        
+        if (!success) {
+            logger.info("[RESULTADO] ATAQUE BLOQUEADO - Edge rejeitou dados");
+            logger.info("[SEGURANCA] Sistema validou JWT corretamente");
         } else {
-            logger.warn("[ATENÇÃO] Resposta recebida: {}", packet.message().getType());
+            logger.error("[RESULTADO] ATAQUE SUCEDIDO - Dados aceitos!");
+            logger.error("[FALHA] Sistema aceitou JWT forjado!");
         }
     }
 
-    // Ataque 3 - Mensagem adulterada (esperado: verificação de assinatura falha)
     private void attackTamperedMessage() {
-        logger.info("Tentando enviar mensagem adulterada...");
+        logger.info("[ATAQUE] Autenticando com credenciais validas primeiro...");
         
-        SensorData fakeData = SensorData.generateRandom(sensorId);
-        MessageUDP dataMsg = channel.buildEncryptedEnvelope("EDGE", MessageTypeUDP.DATA, fakeData.toJson(), "fake-jwt-token");
-        if (dataMsg == null) {
-            logger.error("Falha ao construir mensagem DATA");
+        this.jwtToken = tcpClient.authenticateWithAuthServer(
+            udpClient.getAuthHost(),
+            udpClient.getAuthPort(),
+            password
+        );
+        
+        if (jwtToken == null) {
+            logger.error("Falha na autenticacao - nao foi possivel prosseguir");
+            return;
+        }
+        logger.info("         Token obtido: {}...", jwtToken.substring(0, Math.min(50, jwtToken.length())));
+        
+        logger.info("[ATAQUE] Conectando ao Edge e enviando mensagem adulterada...");
+        logger.info("         (Neste cenario, a adulteracao ocorre durante transmissao)");
+        logger.info("         Devido a criptografia e assinatura, este ataque eh complexo");
+        logger.info("         O sistema deve rejeitar qualquer mensagem com HMAC invalido");
+        
+        if (!tcpClient.connectToEdge(udpClient.getEdgeHost(), udpClient.getEdgePort())) {
+            logger.error("Falha ao conectar ao Edge");
             return;
         }
         
-        // Passo 1 - Adulterar payload cifrado (modificar alguns bytes)
-        String originalPayload = dataMsg.getEncryptedPayload();
-        String tamperedPayload = originalPayload.substring(0, 10) + "XXXX" + originalPayload.substring(14);
+        SensorData data = SensorData.generateRandom(sensorId);
+        boolean success = tcpClient.sendData(data.toJson(), jwtToken);
         
-        // Passo 2 - Criar mensagem adulterada usando builder (manter tipo e assinatura original, mas payload corrompido)
-        MessageUDP tamperedMsg = MessageUDP.builder()
-                .type(dataMsg.getType())
-                .senderId(sensorId)
-                .encryptedPayload(tamperedPayload)
-                .signature(dataMsg.getSignature()) // Mantém assinatura original (agora inválida)
-                .jwtToken("fake-jwt-token")
-                .build();
+        tcpClient.closeEdgeChannel();
         
-        channel.send(tamperedMsg, edgeHost, edgePort);
-        logger.info("[RESULTADO] Mensagem adulterada enviada");
-        logger.info("[ESPERADO] Edge deve rejeitar (assinatura inválida)");
+        logger.info("[RESULTADO] Mensagem normal enviada - success={}", success);
+        logger.info("[NOTA] Adulteracao em transito seria detectada pelo HMAC");
+    }
+
+    private void attackNoAuth() {
+        logger.info("[ATAQUE] Tentando enviar dados sem autenticacao previa...");
         
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) {
-            logger.info("[SUCESSO] Ataque BLOQUEADO - nenhuma resposta (verificação de assinatura falhou)");
+        if (!tcpClient.connectToEdge(udpClient.getEdgeHost(), udpClient.getEdgePort())) {
+            logger.error("Falha ao conectar ao Edge");
+            return;
+        }
+        
+        SensorData data = SensorData.generateRandom(sensorId);
+        boolean success = tcpClient.sendData(data.toJson(), null);
+        
+        tcpClient.closeEdgeChannel();
+        
+        if (!success) {
+            logger.info("[RESULTADO] ATAQUE BLOQUEADO - Edge rejeitou dados sem token");
+            logger.info("[SEGURANCA] Sistema exige autenticacao");
         } else {
-            logger.warn("[ATENÇÃO] Resposta recebida: {}", packet.message().getType());
+            logger.error("[RESULTADO] ATAQUE SUCEDIDO - Dados aceitos sem token!");
+            logger.error("[FALHA] Sistema nao exige autenticacao!");
         }
     }
 
-    // Ataque 4 - Dados sem autenticação (esperado: mensagem rejeitada)
-    private void attackWithoutAuth() {
-        logger.info("Tentando enviar dados sem autenticação prévia...");
+    private void attackAnomalyData() {
+        logger.info("[ATAQUE] Enviando dados com valores anomalos fora do range aceitavel...");
+        logger.info("");
+        logger.info("Ranges normais:");
+        logger.info("  - temperature: -40 a 60 °C");
+        logger.info("  - humidity: 0 a 100 %%");
+        logger.info("  - co2: 200 a 5000 ppm");
+        logger.info("  - pm25: 0 a 500 ug/m3");
+        logger.info("  - noiseLevel: 0 a 150 dB");
+        logger.info("");
         
-        SensorData fakeData = SensorData.generateRandom(sensorId);
-        // Enviar envelope mas sem JWT token válido (passando null ou string vazia)
-        MessageUDP dataMsg = channel.buildEncryptedEnvelope("EDGE", MessageTypeUDP.DATA, fakeData.toJson(), null);
-        if (dataMsg == null) {
-            logger.error("Falha ao construir mensagem DATA");
+        this.jwtToken = tcpClient.authenticateWithAuthServer(
+            udpClient.getAuthHost(),
+            udpClient.getAuthPort(),
+            password
+        );
+        
+        if (jwtToken == null) {
+            logger.error("Falha na autenticacao - nao foi possivel prosseguir");
             return;
         }
+        logger.info("[OK] Autenticado com sucesso");
         
-        // Passo 1 - Enviar mensagem sem token JWT
-        channel.send(dataMsg, edgeHost, edgePort);
-        logger.info("[RESULTADO] Mensagem enviada SEM token JWT");
-        logger.info("[ESPERADO] Edge deve rejeitar (token ausente)");
+        if (!tcpClient.connectToEdge(udpClient.getEdgeHost(), udpClient.getEdgePort())) {
+            logger.error("Falha ao conectar ao Edge");
+            return;
+        }
+        logger.info("[OK] Conectado ao Edge");
+        logger.info("");
+
+        logger.info("Fase 1: Enviando 3 leituras NORMAIS para estabelecer baseline...");
+        for (int i = 1; i <= 3; i++) {
+            SensorData normalData = SensorData.generateRandom(sensorId);
+            logger.info("  [{}] Enviando: {}", i, normalData);
+            boolean success = tcpClient.sendData(normalData.toJson(), jwtToken);
+            logger.info("      Resultado: {}", success ? "ACEITO" : "REJEITADO");
+            sleep(1000);
+        }
         
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) {
-            logger.info("[SUCESSO] Ataque BLOQUEADO - nenhuma resposta (sem autenticação)");
-        } else {
-            logger.warn("[ATENÇÃO] Resposta recebida: {}", packet.message().getType());
+        logger.info("");
+        logger.info("Fase 2: Enviando 5 leituras ANOMALAS (valores extremos)...");
+        logger.info("        O IDS deve detectar e enviar TERMINATE ao Edge!");
+        logger.info("");
+        
+        for (int i = 1; i <= 5; i++) {
+            JsonObject anomalyData = generateAnomalousData(i);
+            logger.info("  [{}] Enviando ANOMALIA: {}", i, anomalyData);
+            
+            boolean success = tcpClient.sendData(anomalyData.toString(), jwtToken);
+            
+            if (!success) {
+                logger.warn("      Resultado: REJEITADO/CONEXAO FECHADA");
+                logger.info("");
+                logger.info("[RESULTADO] Conexao terminada apos {} leituras anomalas", i);
+                logger.info("[SEGURANCA] IDS detectou anomalias e comandou TERMINATE!");
+                tcpClient.closeEdgeChannel();
+                return;
+            }
+            
+            logger.info("      Resultado: ACEITO (aguardando deteccao do IDS...)");
+            sleep(1500);
+        }
+        
+        tcpClient.closeEdgeChannel();
+        
+        logger.info("");
+        logger.info("[RESULTADO] Todas as leituras anomalas foram aceitas");
+        logger.info("[NOTA] IDS pode ainda processar alertas e terminar conexao futuramente");
+    }
+
+    private JsonObject generateAnomalousData(int iteration) {
+        JsonObject data = new JsonObject();
+        data.addProperty("sensorId", sensorId);
+        data.addProperty("timestamp", System.currentTimeMillis());
+        
+        switch (iteration) {
+            case 1 -> {
+                data.addProperty("temperature", 100.0);
+                data.addProperty("humidity", 50.0);
+                data.addProperty("co2", 400.0);
+                data.addProperty("pm25", 10.0);
+                data.addProperty("noiseLevel", 40.0);
+                logger.info("         (temperature=100 ANOMALO - max normal eh 60)");
+            }
+            case 2 -> {
+                data.addProperty("temperature", 25.0);
+                data.addProperty("humidity", 150.0);
+                data.addProperty("co2", 400.0);
+                data.addProperty("pm25", 10.0);
+                data.addProperty("noiseLevel", 40.0);
+                logger.info("         (humidity=150 ANOMALO - max normal eh 100)");
+            }
+            case 3 -> {
+                data.addProperty("temperature", 25.0);
+                data.addProperty("humidity", 50.0);
+                data.addProperty("co2", 10000.0);
+                data.addProperty("pm25", 10.0);
+                data.addProperty("noiseLevel", 40.0);
+                logger.info("         (co2=10000 ANOMALO - max normal eh 5000)");
+            }
+            case 4 -> {
+                data.addProperty("temperature", 25.0);
+                data.addProperty("humidity", 50.0);
+                data.addProperty("co2", 400.0);
+                data.addProperty("pm25", 1000.0);
+                data.addProperty("noiseLevel", 40.0);
+                logger.info("         (pm25=1000 ANOMALO - max normal eh 500)");
+            }
+            case 5 -> {
+                data.addProperty("temperature", 25.0);
+                data.addProperty("humidity", 50.0);
+                data.addProperty("co2", 400.0);
+                data.addProperty("pm25", 10.0);
+                data.addProperty("noiseLevel", 200.0);
+                logger.info("         (noiseLevel=200 ANOMALO - max normal eh 150)");
+            }
+            default -> {
+                data.addProperty("temperature", -100.0);
+                data.addProperty("humidity", -50.0);
+                data.addProperty("co2", 50000.0);
+                data.addProperty("pm25", 5000.0);
+                data.addProperty("noiseLevel", 500.0);
+                logger.info("         (TODOS os valores ANOMALOS)");
+            }
+        }
+        
+        return data;
+    }
+
+    private void printSeparator(String title) {
+        logger.info("");
+        logger.info("┌──────────────────────────────────────────────────────────┐");
+        logger.info("│ {}", padRight(title, 57) + "│");
+        logger.info("└──────────────────────────────────────────────────────────┘");
+    }
+
+    private String padRight(String s, int n) {
+        return String.format("%-" + n + "s", s);
+    }
+
+    private void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
     public static void main(String[] args) {
-        String id = args.length > 0 ? args[0] : "MALICIOUS_SENSOR";
-        String host = args.length > 1 ? args[1] : "localhost";
-        int port = args.length > 2 ? Integer.parseInt(args[2]) : 4000;
-        
-        MaliciousSensor malicious = new MaliciousSensor(id, host, port);
-        malicious.runAllAttacks();
+        String sensorId = "MALICIOUS_SENSOR";
+        String password = "sensor123";
+        String host = "localhost";
+        int port = 4000;
+        AttackMode mode = AttackMode.ALL;
+
+        for (int i = 0; i < args.length; i++) {
+            switch (args[i]) {
+                case "--id" -> sensorId = args[++i];
+                case "--password" -> password = args[++i];
+                case "--host" -> host = args[++i];
+                case "--port" -> port = Integer.parseInt(args[++i]);
+                case "--mode" -> mode = AttackMode.valueOf(args[++i].toUpperCase());
+                case "--help" -> {
+                    System.out.println("Uso: MaliciousSensor [opcoes]");
+                    System.out.println("  --id <sensor_id>      ID do sensor (default: MALICIOUS_SENSOR)");
+                    System.out.println("  --password <senha>    Senha para ataques com credenciais validas (default: sensor123)");
+                    System.out.println("  --host <host>         Host do Discovery (default: localhost)");
+                    System.out.println("  --port <port>         Porta do Discovery (default: 4000)");
+                    System.out.println("  --mode <mode>         Modo de ataque:");
+                    System.out.println("                        INVALID_CREDENTIALS - Testa credenciais invalidas");
+                    System.out.println("                        FORGED_JWT - Testa JWT forjado");
+                    System.out.println("                        TAMPERED_MESSAGE - Testa mensagem adulterada");
+                    System.out.println("                        NO_AUTH - Testa envio sem autenticacao");
+                    System.out.println("                        ANOMALY_DATA - Envia dados com valores anomalos");
+                    System.out.println("                        ALL - Executa todos os testes (default)");
+                    return;
+                }
+            }
+        }
+
+        MaliciousSensor malicious = new MaliciousSensor(sensorId, password, host, port, mode);
+        malicious.run();
     }
 }

@@ -1,13 +1,26 @@
 #!/bin/bash
 
 ###############################################################################
-# Script de Inicialização do Sistema de Monitoramento Ambiental
+# Script de Inicialização do Sistema de Monitoramento Ambiental (DMZ)
+#
+# Arquitetura:
+#   DMZ:      PacketFilter -> ReverseProxy -> Discovery + IDS
+#   Interna:  AuthServer, Edge, Datacenter
 #
 # Layout:
-#   Window 1 [Serviços]:   Discovery | Datacenter | Edge
-#   Window 2 [Sensores]:   Sensor 001-004 (2x2 grid)
-#   Window 3 [Edge]:       Edge log | MaliciousSensor (manual)
-#   Window 4 [Datacenter]: Datacenter log | ClientApp (manual)
+#   Window 1 [DMZ]:         PacketFilter | ReverseProxy | IDS
+#   Window 2 [Interna]:     Discovery | AuthServer | Edge | Datacenter
+#   Window 3 [Sensores]:    Sensor 001-004 (2x2 grid)
+#   Window 4 [Testes]:      MaliciousSensor (manual) | ClientApp (manual)
+#
+# Ordem de Inicializacao:
+#   1. Discovery (UDP:4000)
+#   2. IDS (TCP:3002)
+#   3. AuthServer (TCP:4001)
+#   4. Edge (TCP:5000, IDS:5001)
+#   5. Datacenter (TCP:8080, HTTP:9090)
+#   6. ReverseProxy (TCP:3001, 3011, 3021)
+#   7. PacketFilter (TCP:3000, 3010, 3020)
 #
 # Uso:
 #   ./scripts/start-system-interactive.sh
@@ -55,8 +68,8 @@ echo ""
 echo -e "${GREEN}📊 Criando sessão tmux com 4 janelas...${NC}"
 echo ""
 
-# Criar sessão com janela "Serviços" (índice base 1)
-tmux new-session -d -s "$TMUX_SESSION" -n "Serviços"
+# Criar sessão com janela "Interna" (índice base 1)
+tmux new-session -d -s "$TMUX_SESSION" -n "Interna"
 
 # Configurar índice base 1 para janelas
 tmux set-option -t "$TMUX_SESSION" base-index 1
@@ -75,70 +88,131 @@ tmux set-option -g allow-set-title off
 tmux set-window-option -g automatic-rename off
 
 ###############################################################################
-# JANELA 1: SERVIÇOS (Discovery, Datacenter, Edge)
+# INICIAR SERVIDORES (ordem critica para conexoes)
 ###############################################################################
 
-echo -e "${GREEN}[1/4]${NC} Iniciando Discovery Service (UDP:4000)..."
-
-# Iniciar Discovery em background
+echo -e "${GREEN}[1/7]${NC} Iniciando Discovery Service (UDP:4000)..."
 mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$DISCOVERY_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > "$LOG_DIR/discovery.log" 2>&1 &
 DISCOVERY_PID=$!
 echo "$DISCOVERY_PID" > "$PID_DIR/discovery.pid"
-
 echo -e "${GREEN}✓${NC} Discovery iniciado (PID: $DISCOVERY_PID)"
 sleep $DISCOVERY_DELAY
 
-echo -e "${GREEN}[2/4]${NC} Iniciando Datacenter (TCP:8080, HTTP:9090)..."
-
-# Iniciar Datacenter em background
+echo -e "${GREEN}[2/7]${NC} Iniciando IDS (TCP:3002)..."
 mvn -f "$POM_FILE" exec:java \
-    -Dexec.mainClass="$DATACENTER_CLASS" \
+    -Dexec.mainClass="$IDS_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/datacenter.log" 2>&1 &
-DATACENTER_PID=$!
-echo "$DATACENTER_PID" > "$PID_DIR/datacenter.pid"
+    > "$LOG_DIR/ids.log" 2>&1 &
+IDS_PID=$!
+echo "$IDS_PID" > "$PID_DIR/ids.pid"
+echo -e "${GREEN}✓${NC} IDS iniciado (PID: $IDS_PID)"
+sleep $IDS_DELAY
 
-echo -e "${GREEN}✓${NC} Datacenter iniciado (PID: $DATACENTER_PID)"
-sleep $DATACENTER_DELAY
+echo -e "${GREEN}[3/7]${NC} Iniciando AuthServer (TCP:4001)..."
+mvn -f "$POM_FILE" exec:java \
+    -Dexec.mainClass="$AUTH_CLASS" \
+    -Dexec.cleanupDaemonThreads=false \
+    > "$LOG_DIR/auth.log" 2>&1 &
+AUTH_PID=$!
+echo "$AUTH_PID" > "$PID_DIR/auth.pid"
+echo -e "${GREEN}✓${NC} AuthServer iniciado (PID: $AUTH_PID)"
+sleep $AUTH_DELAY
 
-echo -e "${GREEN}[3/4]${NC} Iniciando Edge Server (UDP:5000)..."
-
-# Iniciar Edge em background
+echo -e "${GREEN}[4/7]${NC} Iniciando Edge Server (TCP:5000, IDS:5001)..."
 mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$EDGE_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > "$LOG_DIR/edge.log" 2>&1 &
 EDGE_PID=$!
 echo "$EDGE_PID" > "$PID_DIR/edge.pid"
-
 echo -e "${GREEN}✓${NC} Edge Server iniciado (PID: $EDGE_PID)"
 sleep $EDGE_DELAY
 
-# Criar painéis: split horizontal para 3 colunas
-tmux split-window -h -t "$TMUX_SESSION:Serviços"
-tmux split-window -h -t "$TMUX_SESSION:Serviços.0"
+echo -e "${GREEN}[5/7]${NC} Iniciando Datacenter (TCP:8080, HTTP:9090)..."
+mvn -f "$POM_FILE" exec:java \
+    -Dexec.mainClass="$DATACENTER_CLASS" \
+    -Dexec.cleanupDaemonThreads=false \
+    > "$LOG_DIR/datacenter.log" 2>&1 &
+DATACENTER_PID=$!
+echo "$DATACENTER_PID" > "$PID_DIR/datacenter.pid"
+echo -e "${GREEN}✓${NC} Datacenter iniciado (PID: $DATACENTER_PID)"
+sleep $DATACENTER_DELAY
+
+echo -e "${GREEN}[6/7]${NC} Iniciando ReverseProxy (TCP:3001, 3011, 3021)..."
+mvn -f "$POM_FILE" exec:java \
+    -Dexec.mainClass="$PROXY_CLASS" \
+    -Dexec.cleanupDaemonThreads=false \
+    > "$LOG_DIR/proxy.log" 2>&1 &
+PROXY_PID=$!
+echo "$PROXY_PID" > "$PID_DIR/proxy.pid"
+echo -e "${GREEN}✓${NC} ReverseProxy iniciado (PID: $PROXY_PID)"
+sleep $PROXY_DELAY
+
+echo -e "${GREEN}[7/7]${NC} Iniciando PacketFilter (TCP:3000, 3010, 3020)..."
+mvn -f "$POM_FILE" exec:java \
+    -Dexec.mainClass="$PFILTER_CLASS" \
+    -Dexec.cleanupDaemonThreads=false \
+    > "$LOG_DIR/pfilter.log" 2>&1 &
+PFILTER_PID=$!
+echo "$PFILTER_PID" > "$PID_DIR/pfilter.pid"
+echo -e "${GREEN}✓${NC} PacketFilter iniciado (PID: $PFILTER_PID)"
+sleep $PFILTER_DELAY
+
+###############################################################################
+# JANELA 1: INTERNA (Discovery, AuthServer, Edge, Datacenter)
+###############################################################################
+
+# Criar painéis: split horizontal para 4 colunas
+tmux split-window -h -t "$TMUX_SESSION:Interna"
+tmux split-window -h -t "$TMUX_SESSION:Interna.0"
+tmux split-window -h -t "$TMUX_SESSION:Interna.2"
 
 # Aplicar layout horizontal uniforme
-tmux select-layout -t "$TMUX_SESSION:Serviços" even-horizontal
+tmux select-layout -t "$TMUX_SESSION:Interna" even-horizontal
 
 # Enviar comandos para cada painel
-tmux send-keys -t "$TMUX_SESSION:Serviços.0" "tail -f '$LOG_DIR/discovery.log'" C-m
-tmux send-keys -t "$TMUX_SESSION:Serviços.1" "tail -f '$LOG_DIR/datacenter.log'" C-m
-tmux send-keys -t "$TMUX_SESSION:Serviços.2" "tail -f '$LOG_DIR/edge.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:Interna.0" "tail -f '$LOG_DIR/discovery.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:Interna.1" "tail -f '$LOG_DIR/auth.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:Interna.2" "tail -f '$LOG_DIR/edge.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:Interna.3" "tail -f '$LOG_DIR/datacenter.log'" C-m
 
 # Definir títulos APÓS enviar comandos
-tmux select-pane -t "$TMUX_SESSION:Serviços.0" -T "🔍 Discovery (UDP:4000)"
-tmux select-pane -t "$TMUX_SESSION:Serviços.1" -T "💾 Datacenter (TCP:8080)"
-tmux select-pane -t "$TMUX_SESSION:Serviços.2" -T "🌐 Edge (UDP:5000)"
+tmux select-pane -t "$TMUX_SESSION:Interna.0" -T "🔍 Discovery (UDP:4000)"
+tmux select-pane -t "$TMUX_SESSION:Interna.1" -T "🔑 AuthServer (TCP:4001)"
+tmux select-pane -t "$TMUX_SESSION:Interna.2" -T "🌐 Edge (TCP:5000)"
+tmux select-pane -t "$TMUX_SESSION:Interna.3" -T "💾 Datacenter (TCP:8080)"
 
 ###############################################################################
-# JANELA 2: SENSORES (Sensor 001-004)
+# JANELA 2: DMZ (PacketFilter, ReverseProxy, IDS)
 ###############################################################################
 
-echo -e "${GREEN}[4/4]${NC} Iniciando Sensores (4 processos)..."
+tmux new-window -t "$TMUX_SESSION" -n "DMZ"
+
+# Criar painéis: split horizontal para 3 colunas
+tmux split-window -h -t "$TMUX_SESSION:DMZ"
+tmux split-window -h -t "$TMUX_SESSION:DMZ.0"
+
+# Aplicar layout horizontal uniforme
+tmux select-layout -t "$TMUX_SESSION:DMZ" even-horizontal
+
+# Enviar comandos para cada painel
+tmux send-keys -t "$TMUX_SESSION:DMZ.0" "tail -f '$LOG_DIR/pfilter.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:DMZ.1" "tail -f '$LOG_DIR/proxy.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:DMZ.2" "tail -f '$LOG_DIR/ids.log'" C-m
+
+# Definir títulos APÓS enviar comandos
+tmux select-pane -t "$TMUX_SESSION:DMZ.0" -T "🔥 PacketFilter (TCP:3000,3010,3020)"
+tmux select-pane -t "$TMUX_SESSION:DMZ.1" -T "🛡️ ReverseProxy (TCP:3001,3011,3021)"
+tmux select-pane -t "$TMUX_SESSION:DMZ.2" -T "🚨 IDS (TCP:3002)"
+
+###############################################################################
+# JANELA 3: SENSORES (Sensor 001-004)
+###############################################################################
+
+echo -e "${GREEN}[Sensores]${NC} Iniciando 4 sensores..."
 
 # Criar janela "Sensores"
 tmux new-window -t "$TMUX_SESSION" -n "Sensores"
@@ -182,49 +256,32 @@ tmux select-pane -t "$TMUX_SESSION:Sensores.2" -T "📡 SENSOR_003"
 tmux select-pane -t "$TMUX_SESSION:Sensores.3" -T "📡 SENSOR_004"
 
 ###############################################################################
-# JANELA 3: EDGE + MALICIOUS SENSOR (manual)
+# JANELA 4: TESTES (MaliciousSensor, ClientApp)
 ###############################################################################
 
-tmux new-window -t "$TMUX_SESSION" -n "Edge"
+tmux new-window -t "$TMUX_SESSION" -n "Testes"
 
 # Criar painel adicional
-tmux split-window -h -t "$TMUX_SESSION:Edge"
+tmux split-window -h -t "$TMUX_SESSION:Testes"
 
-# Enviar comandos para cada painel
-tmux send-keys -t "$TMUX_SESSION:Edge.0" "tail -f '$LOG_DIR/edge.log'" C-m
-tmux send-keys -t "$TMUX_SESSION:Edge.1" "cd '$PROJECT_DIR' && ./scripts/stop-sensors.sh && mvn exec:java -Dexec.mainClass='$MALICIOUS_SENSOR_CLASS'"
-
-# Definir títulos APÓS enviar comandos
-tmux select-pane -t "$TMUX_SESSION:Edge.0" -T "🌐 Edge Server (log)"
-tmux select-pane -t "$TMUX_SESSION:Edge.1" -T "⚠️ MaliciousSensor (manual)"
-
-###############################################################################
-# JANELA 4: DATACENTER + CLIENT APP (manual)
-###############################################################################
-
-tmux new-window -t "$TMUX_SESSION" -n "Datacenter"
-
-# Criar painel adicional
-tmux split-window -h -t "$TMUX_SESSION:Datacenter"
-
-# Enviar comandos para cada painel
-tmux send-keys -t "$TMUX_SESSION:Datacenter.0" "tail -f '$LOG_DIR/datacenter.log'" C-m
-tmux send-keys -t "$TMUX_SESSION:Datacenter.1" "cd '$PROJECT_DIR' && mvn exec:java -Dexec.mainClass='$CLIENT_APP_CLASS'"
+# Enviar comandos para cada painel (preparados, nao executam)
+tmux send-keys -t "$TMUX_SESSION:Testes.0" "cd '$PROJECT_DIR' && mvn exec:java -Dexec.mainClass='$MALICIOUS_SENSOR_CLASS' -Dexec.args='--mode ANOMALY_DATA --password sensor123'"
+tmux send-keys -t "$TMUX_SESSION:Testes.1" "cd '$PROJECT_DIR' && mvn exec:java -Dexec.mainClass='$CLIENT_APP_CLASS'"
 
 # Definir títulos APÓS enviar comandos
-tmux select-pane -t "$TMUX_SESSION:Datacenter.0" -T "💾 Datacenter (log)"
-tmux select-pane -t "$TMUX_SESSION:Datacenter.1" -T "👤 ClientApp (manual)"
+tmux select-pane -t "$TMUX_SESSION:Testes.0" -T "⚠️ MaliciousSensor (ENTER para iniciar)"
+tmux select-pane -t "$TMUX_SESSION:Testes.1" -T "👤 ClientApp (ENTER para iniciar)"
 
 ###############################################################################
 # FASE 3: FINALIZAÇÃO
 ###############################################################################
 
-# Voltar para janela Serviços
-tmux select-window -t "$TMUX_SESSION:Serviços"
-tmux select-pane -t "$TMUX_SESSION:Serviços.0"
+# Voltar para janela Interna
+tmux select-window -t "$TMUX_SESSION:Interna"
+tmux select-pane -t "$TMUX_SESSION:Interna.0"
 
 echo ""
-echo -e "${GREEN}✅ Sistema iniciado com sucesso!${NC}"
+echo -e "${GREEN}✅ Sistema DMZ iniciado com sucesso!${NC}"
 echo ""
 sleep 1
 
@@ -233,14 +290,19 @@ sleep 1
 ###############################################################################
 
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║                    MONITOR DO SISTEMA                          ║"
+echo "║            SISTEMA DE MONITORAMENTO AMBIENTAL (DMZ)            ║"
+echo "╠════════════════════════════════════════════════════════════════╣"
+echo "║  Arquitetura:                                                  ║"
+echo "║    Sensor -> PacketFilter -> ReverseProxy -> Edge              ║"
+echo "║                               ↓                                ║"
+echo "║                              IDS                               ║"
 echo "╠════════════════════════════════════════════════════════════════╣"
 echo "║  Layout: 4 janelas tmux                                        ║"
 echo "║                                                                ║"
-echo "║  Ctrl+B 1  [Serviços]:   Discovery | Datacenter | Edge         ║"
-echo "║  Ctrl+B 2  [Sensores]:   Sensor 001-004 (grid 2x2)             ║"
-echo "║  Ctrl+B 3  [Edge]:       Edge log | MaliciousSensor (manual)   ║"
-echo "║  Ctrl+B 4  [Datacenter]: Datacenter log | ClientApp (manual)   ║"
+echo "║  Ctrl+B 1  [Interna]:  Discovery | Auth | Edge | Datacenter    ║"
+echo "║  Ctrl+B 2  [DMZ]:      PacketFilter | ReverseProxy | IDS       ║"
+echo "║  Ctrl+B 3  [Sensores]: Sensor 001-004 (grid 2x2)               ║"
+echo "║  Ctrl+B 4  [Testes]:   MaliciousSensor | ClientApp (manual)    ║"
 echo "╠════════════════════════════════════════════════════════════════╣"
 echo "║  Atalhos:                                                      ║"
 echo "║    Ctrl+B <n>        - Ir para janela n                        ║"
@@ -249,7 +311,7 @@ echo "║    Ctrl+B [          - Modo scroll (Q para sair)               ║"
 echo "║    Ctrl+B Z          - Zoom no painel atual                    ║"
 echo "║    Ctrl+B D          - Desanexar (processos continuam)         ║"
 echo "╠════════════════════════════════════════════════════════════════╣"
-echo "║  Janelas 3 e 4: Pressione ENTER para iniciar manualmente       ║"
+echo "║  Janela 4: Pressione ENTER para iniciar testes manualmente     ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 sleep 2

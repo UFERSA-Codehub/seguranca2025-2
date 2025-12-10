@@ -1,11 +1,15 @@
 package com.project.server.edge;
 
+import java.io.IOException;
 import java.net.DatagramSocket;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.SocketException;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -16,33 +20,34 @@ import org.slf4j.LoggerFactory;
 import com.project.auth.JWT;
 import com.project.crypto.KeyManager;
 import com.project.network.SecureUDPChannel;
-import com.project.network.SecureUDPChannel.ReceivedPacket;
 import com.project.server.IServer;
+import com.project.server.auth.ServerAuth;
 import com.project.server.edge.data.Cache;
 
 public class ServerEdge implements IServer {
     private static final Logger logger = LoggerFactory.getLogger("ServerEdge");
-    private static final String JWT_SECRET = "EdgeServerSecretKeyForJWTSigning32B"; // 32 bytes for HS256
     
     private final String name;
     private final int port;
+    private final int idsPort;
     private final String discoveryHost;
     private final int discoveryPort;
     
     private volatile boolean running;
-    private SecureUDPChannel channel;
+    private KeyManager keyManager;
+    private SecureUDPChannel udpChannel;
+    private ServerSocket tcpServerSocket;
+    private ServerSocket idsServerSocket;
+    private ExecutorService sensorThreadPool;
+    private ExecutorService idsThreadPool;
     private JWT jwt;
     private Cache cache;
     
-    // Cliente e handler UDP
+    // Registro de conexões ativas por IP (para TERMINATE do IDS)
+    private final Map<String, SensorTcpHandler> activeConnections = new ConcurrentHashMap<>();
+    
+    // Cliente UDP para Discovery
     private UdpClient udpClient;
-    private UdpHandler udpHandler;
-    
-    // Armazena credenciais: sensorId -> hash da senha
-    private final Map<String, String> credentialStore;
-    
-    // Sessões ativas: sensorId -> token JWT
-    private final Map<String, String> activeSessions;
     
     // Informações do Datacenter descoberto
     private String datacenterHost;
@@ -57,27 +62,25 @@ public class ServerEdge implements IServer {
     public ServerEdge(int port, String discoveryHost, int discoveryPort) {
         this.name = "EDGE";
         this.port = port;
+        this.idsPort = port + 1;
         this.discoveryHost = discoveryHost;
         this.discoveryPort = discoveryPort;
         this.running = false;
-        this.credentialStore = new ConcurrentHashMap<>();
-        this.activeSessions = new ConcurrentHashMap<>();
-        
-        // Pré-registrar sensores de teste
-        registerSensor("SENSOR_001", "senha123");
-        registerSensor("SENSOR_002", "senha456");
-        registerSensor("SENSOR_003", "senha789");
-        registerSensor("SENSOR_004", "senha321");
     }
 
     @Override
     public void start() {
         logger.info("Iniciando [Servidor Edge] na porta {}...", port);
         try {
-            KeyManager keyManager = new KeyManager();
-            DatagramSocket socket = new DatagramSocket(port);
-            this.channel = new SecureUDPChannel(name, keyManager, socket);
-            this.jwt = new JWT(JWT_SECRET, name);
+            this.keyManager = new KeyManager();
+            DatagramSocket udpSocket = new DatagramSocket();
+            udpSocket.setSoTimeout(5000);
+            this.udpChannel = new SecureUDPChannel(name, keyManager, udpSocket);
+            this.tcpServerSocket = new ServerSocket(port);
+            this.idsServerSocket = new ServerSocket(idsPort);
+            this.sensorThreadPool = Executors.newFixedThreadPool(20);
+            this.idsThreadPool = Executors.newFixedThreadPool(2);
+            this.jwt = new JWT(ServerAuth.JWT_SECRET, "AuthServer");
             this.cache = new Cache();
             this.scheduler = Executors.newScheduledThreadPool(2);
             this.running = true;
@@ -85,23 +88,16 @@ public class ServerEdge implements IServer {
             logger.error("Erro ao inicializar KeyManager: {}", e.getMessage());
             return;
         } catch (SocketException e) {
-            logger.error("Erro ao abrir socket na porta {}: {}", port, e.getMessage());
+            logger.error("Erro ao abrir socket UDP: {}", e.getMessage());
+            return;
+        } catch (IOException e) {
+            logger.error("Erro ao abrir socket TCP na porta {}: {}", port, e.getMessage());
             return;
         }
 
         // Inicializar cliente UDP para comunicação com Discovery
-        this.udpClient = new UdpClient(name, channel, discoveryHost, discoveryPort);
+        this.udpClient = new UdpClient(name, udpChannel, discoveryHost, discoveryPort);
         udpClient.setScheduler(scheduler);
-
-        // Inicializar UDP handler com callback de re-registro
-        this.udpHandler = new UdpHandler(
-            channel,
-            jwt,
-            cache,
-            credentialStore,
-            activeSessions,
-            this::performReRegister
-        );
 
         // Registrar no Discovery
         if (!udpClient.handshake()) { 
@@ -128,37 +124,90 @@ public class ServerEdge implements IServer {
                 logger.info("Datacenter descoberto: {}:{}", datacenterHost, datacenterPort);
             }
         } else {
-            logger.warn("Datacenter não disponível no momento - tentará reconectar durante flush");
+            logger.warn("Datacenter nao disponivel no momento - tentara reconectar durante flush");
         }
 
         // Sempre iniciar flush scheduler (tem lógica de retry interna)
         startCacheFlushScheduler();
 
-        logger.info("[Servidor Edge] iniciado na porta {}", port);
+        // Iniciar listener para comandos do IDS
+        startIdsListener();
+
+        logger.info("[Servidor Edge] iniciado na porta {} (TCP) e {} (IDS)", port, idsPort);
         
-        // Loop principal de recebimento de mensagens
+        // Loop principal de aceitação de conexões TCP de sensores
         while (running) {
-            ReceivedPacket packet = channel.receive();
-            if (packet != null) {
-                udpHandler.handle(packet.message(), packet.address(), packet.port());
+            try {
+                Socket clientSocket = tcpServerSocket.accept();
+                String clientIp = extractIp(clientSocket);
+                logger.info("Nova conexao de sensor: {} (IP: {})", clientSocket.getRemoteSocketAddress(), clientIp);
+                SensorTcpHandler handler = new SensorTcpHandler(clientSocket, keyManager, jwt, cache, this);
+                activeConnections.put(clientIp, handler);
+                sensorThreadPool.submit(handler);
+            } catch (IOException e) {
+                if (running) {
+                    logger.error("Erro ao aceitar conexao: {}", e.getMessage());
+                }
             }
         }
     }
 
+    private void startIdsListener() {
+        idsThreadPool.submit(() -> {
+            logger.info("Listener IDS iniciado na porta {}", idsPort);
+            while (running) {
+                try {
+                    Socket idsSocket = idsServerSocket.accept();
+                    logger.info("Conexao do IDS recebida: {}", idsSocket.getRemoteSocketAddress());
+                    idsThreadPool.submit(new IdsCommandHandler(idsSocket, keyManager, this));
+                } catch (IOException e) {
+                    if (running) {
+                        logger.error("Erro no listener IDS: {}", e.getMessage());
+                    }
+                }
+            }
+        });
+    }
+
+    public void terminateByIp(String ip) {
+        SensorTcpHandler handler = activeConnections.remove(ip);
+        if (handler != null) {
+            logger.warn("Terminando conexao de IP malicioso: {}", ip);
+            handler.forceClose();
+        } else {
+            logger.debug("IP {} nao encontrado nas conexoes ativas", ip);
+        }
+    }
+
+    public void unregisterConnection(String ip) {
+        activeConnections.remove(ip);
+        logger.debug("Conexao removida do registro: {}", ip);
+    }
+
+    private String extractIp(Socket socket) {
+        String address = socket.getRemoteSocketAddress().toString();
+        if (address.startsWith("/")) {
+            address = address.substring(1);
+        }
+        int colonIndex = address.lastIndexOf(':');
+        if (colonIndex > 0) {
+            return address.substring(0, colonIndex);
+        }
+        return address;
+    }
+
     private void performReRegister() {
-        // Re-fazer handshake
         if (!udpClient.handshake()) {
             logger.error("Falha no re-handshake com Discovery");
             return;
         }
 
-        // Re-registrar
         if (!udpClient.register(port)) {
             logger.error("Falha no re-registro com Discovery");
             return;
         }
 
-        logger.info("Re-registro com Discovery concluído com sucesso");
+        logger.info("Re-registro com Discovery concluido com sucesso");
     }
 
     private void startCacheFlushScheduler() {
@@ -201,12 +250,10 @@ public class ServerEdge implements IServer {
     }
 
     private boolean ensureDatacenterConnection() {
-        // Passo 1 - Se já temos cliente e está conectado, ok
         if (datacenterClient != null && datacenterClient.ensureConnected()) {
             return true;
         }
 
-        // Passo 2 - Tentar redescobrir Datacenter via Discovery
         logger.info("Tentando redescobrir Datacenter via Discovery...");
 
         while (running) {
@@ -225,8 +272,7 @@ public class ServerEdge implements IServer {
                 }
             }
 
-            // Passo 3 - Discovery não encontrou ou conexão falhou, aguardar e retentar
-            logger.warn("Datacenter não disponível - aguardando {}s para retentar...", RECONNECT_RETRY_SECONDS);
+            logger.warn("Datacenter nao disponivel - aguardando {}s para retentar...", RECONNECT_RETRY_SECONDS);
             try {
                 Thread.sleep(RECONNECT_RETRY_SECONDS * 1000L);
             } catch (InterruptedException e) {
@@ -236,11 +282,6 @@ public class ServerEdge implements IServer {
         }
 
         return false;
-    }
-
-    public void registerSensor(String sensorId, String password) {
-        credentialStore.put(sensorId, password);
-        logger.info("Sensor registrado: {}", sensorId);
     }
 
     public Cache getCache() {
@@ -264,12 +305,52 @@ public class ServerEdge implements IServer {
             }
         }
         
+        if (sensorThreadPool != null && !sensorThreadPool.isShutdown()) {
+            sensorThreadPool.shutdown();
+            try {
+                if (!sensorThreadPool.awaitTermination(5, TimeUnit.SECONDS)) {
+                    sensorThreadPool.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                sensorThreadPool.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        if (idsThreadPool != null && !idsThreadPool.isShutdown()) {
+            idsThreadPool.shutdown();
+            try {
+                if (!idsThreadPool.awaitTermination(5, TimeUnit.SECONDS)) {
+                    idsThreadPool.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                idsThreadPool.shutdownNow();
+                Thread.currentThread().interrupt();
+            }
+        }
+        
         if (datacenterClient != null) {
             datacenterClient.disconnect();
         }
         
-        if (channel != null) {
-            channel.getSocket().close();
+        try {
+            if (tcpServerSocket != null && !tcpServerSocket.isClosed()) {
+                tcpServerSocket.close();
+            }
+        } catch (IOException e) {
+            logger.error("Erro ao fechar ServerSocket: {}", e.getMessage());
+        }
+
+        try {
+            if (idsServerSocket != null && !idsServerSocket.isClosed()) {
+                idsServerSocket.close();
+            }
+        } catch (IOException e) {
+            logger.error("Erro ao fechar IDS ServerSocket: {}", e.getMessage());
+        }
+        
+        if (udpChannel != null) {
+            udpChannel.getSocket().close();
         }
         logger.info("[Servidor Edge] parado.");
     }
@@ -286,8 +367,7 @@ public class ServerEdge implements IServer {
     @Override
     public void showStatus() {
         logger.info("=== Status do Servidor Edge ===");
-        logger.info("Nome: {} | Porta: {} | Status: {}", name, port, running ? "Em execução" : "Parado");
-        logger.info("Sensores registrados: {} | Sessões ativas: {}", credentialStore.size(), activeSessions.size());
+        logger.info("Nome: {} | Porta: {} | Status: {}", name, port, running ? "Em execucao" : "Parado");
         logger.info("Dados no cache: {}", cache != null ? cache.getCount() : 0);
     }
 

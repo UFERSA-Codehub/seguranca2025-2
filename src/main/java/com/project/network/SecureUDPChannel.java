@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.project.crypto.AES;
+import com.project.crypto.HMAC;
 import com.project.crypto.KeyManager;
 
 import com.project.message.udp.EnvelopeUDP;
@@ -72,14 +73,20 @@ public class SecureUDPChannel {
     public MessageUDP buildEncrypted(String peerId, MessageTypeUDP type, String payload) {
         try {
             SecretKey aesKey = keyManager.getPeerAESKey(peerId);
+            SecretKey hmacKey = keyManager.getPeerHMACKey(peerId);
+            
             AES aes = new AES(aesKey);
+            HMAC hmac = new HMAC(hmacKey);
+            
             String encryptedPayload = aes.encrypt(payload);
-            // Assinar ciphertext diretamente (sem HMAC)
+            String hmacValue = hmac.sign(encryptedPayload);
             String signature = keyManager.signBase64(encryptedPayload.getBytes());
+            
             return MessageUDP.builder()
                     .type(type)
                     .senderId(entityId)
                     .encryptedPayload(encryptedPayload)
+                    .hmac(hmacValue)
                     .signature(signature)
                     .build();
         } catch (GeneralSecurityException e) {
@@ -94,13 +101,24 @@ public class SecureUDPChannel {
             return false;
         }
         try {
-            // Verificar assinatura RSA do ciphertext (autenticidade + integridade)
-            byte[] ciphertextBytes = message.getEncryptedPayload().getBytes();
+            String encryptedPayload = message.getEncryptedPayload();
+            
+            // Passo 1 - Verificar HMAC (integridade simétrica)
+            SecretKey hmacKey = keyManager.getPeerHMACKey(senderId);
+            HMAC hmac = new HMAC(hmacKey);
+            if (!hmac.verify(encryptedPayload, message.getHmac())) {
+                logger.warn("HMAC inválido de '{}'", senderId);
+                return false;
+            }
+            
+            // Passo 2 - Verificar assinatura RSA (autenticidade)
+            byte[] ciphertextBytes = encryptedPayload.getBytes();
             byte[] signatureBytes = Base64.getDecoder().decode(message.getSignature());
             if (!keyManager.verifySignature(senderId, ciphertextBytes, signatureBytes)) {
                 logger.warn("Assinatura inválida de '{}'", senderId);
                 return false;
             }
+            
             return true;
         } catch (GeneralSecurityException e) {
             logger.error("Erro ao verificar mensagem de '{}': {}", senderId, e.getMessage());
@@ -132,12 +150,16 @@ public class SecureUDPChannel {
 
             // Passo 2 - Cifrar envelope com AES
             SecretKey aesKey = keyManager.getPeerAESKey(peerId);
+            SecretKey hmacKey = keyManager.getPeerHMACKey(peerId);
+            
             AES aes = new AES(aesKey);
+            HMAC hmac = new HMAC(hmacKey);
 
             String envelopeJson = envelope.toJson();
             String encryptedEnvelope = aes.encrypt(envelopeJson);
 
-            // Passo 3 - Assinar ciphertext diretamente (sem HMAC)
+            // Passo 3 - Gerar HMAC e assinar ciphertext
+            String hmacValue = hmac.sign(encryptedEnvelope);
             String signature = keyManager.signBase64(encryptedEnvelope.getBytes());
 
             // Passo 4 - Construir mensagem externa (type=null indica envelope cifrado)
@@ -145,6 +167,7 @@ public class SecureUDPChannel {
                     .type(null)
                     .senderId(entityId)
                     .encryptedPayload(encryptedEnvelope)
+                    .hmac(hmacValue)
                     .signature(signature)
                     .build();
         } catch (GeneralSecurityException e) {

@@ -21,6 +21,7 @@ public enum MessageTypeUDP {
 
     REGISTER_EDGE,          // Registro de um Edge no Discovery
     REGISTER_DATACENTER,    // Registro de um DataCenter no Discovery
+    REGISTER_AUTH,          // Registro de um AuthServer no Discovery
     REGISTER_OK,            // Resposta de registro bem-sucedido
     REGISTER_FAIL,          // Resposta de falha no registro
 

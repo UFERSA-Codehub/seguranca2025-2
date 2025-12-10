@@ -21,20 +21,28 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-# Classes Java - Servidores
+# Classes Java - Servidores (ordem de inicializacao)
 DISCOVERY_CLASS="com.project.server.discovery.ServerDiscovery"
-DATACENTER_CLASS="com.project.server.datacenter.ServerDatacenter"
+IDS_CLASS="com.project.server.ids.ServerIDS"
+AUTH_CLASS="com.project.server.auth.ServerAuth"
 EDGE_CLASS="com.project.server.edge.ServerEdge"
+DATACENTER_CLASS="com.project.server.datacenter.ServerDatacenter"
+PROXY_CLASS="com.project.server.firewall.ReverseProxy"
+PFILTER_CLASS="com.project.server.firewall.PacketFilter"
 
 # Classes Java - Clientes
 SENSOR_CLASS="com.project.client.sensor.Sensor"
 MALICIOUS_SENSOR_CLASS="com.project.client.sensor.MaliciousSensor"
 CLIENT_APP_CLASS="com.project.client.ClientApp"
 
-# Delays (segundos)
-DISCOVERY_DELAY=1
-DATACENTER_DELAY=3
+# Delays (segundos) - ordem critica para conexoes
+DISCOVERY_DELAY=2
+IDS_DELAY=2
+AUTH_DELAY=2
 EDGE_DELAY=2
+DATACENTER_DELAY=2
+PROXY_DELAY=2
+PFILTER_DELAY=2
 SENSOR_DELAY=1
 
 # Configuração de sensores (ID|PASSWORD)
