@@ -111,7 +111,7 @@ public class PacketFilter implements IServer {
         logger.info("Nova conexao de {} para {}", clientIp, serviceName);
 
         // Verificar regras
-        RuleEngine.CheckResult result = ruleEngine.checkConnection(clientIp, clientSocket.getLocalPort());
+        RuleEngine.CheckResult result = ruleEngine.checkConnection(clientIp, targetPort);
 
         if (!result.allowed()) {
             logger.warn("Conexao bloqueada de {} - {}: {}", clientIp, result.alertType(), result.reason());

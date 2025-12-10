@@ -23,20 +23,17 @@ public class ProxyHandler implements Runnable {
     private final String serviceName;
     private final String clientIp;
     private final int clientPort;
-    private final KeyManager proxyKeyManager;
     private final IdsClient idsClient;
     private final boolean isHttp;
 
     private volatile boolean running;
 
     public ProxyHandler(Socket clientSocket, String targetHost, int targetPort, 
-                       String serviceName, KeyManager proxyKeyManager, IdsClient idsClient,
-                       boolean isHttp) {
+                       String serviceName, IdsClient idsClient, boolean isHttp) {
         this.clientSocket = clientSocket;
         this.targetHost = targetHost;
         this.targetPort = targetPort;
         this.serviceName = serviceName;
-        this.proxyKeyManager = proxyKeyManager;
         this.idsClient = idsClient;
         this.isHttp = isHttp;
         this.running = true;
@@ -61,7 +58,7 @@ public class ProxyHandler implements Runnable {
             clientSocket.setSoTimeout(30000);
 
             // Estabelecer sessao criptografada em ambos os lados
-            session = new ProxySession(proxyKeyManager, clientSocket, serverSocket, clientIp, serviceName);
+            session = new ProxySession(clientSocket, serverSocket, clientIp, serviceName);
             
             if (!session.establish()) {
                 logger.error("Falha ao estabelecer sessao proxy para {}", clientIp);
@@ -87,6 +84,7 @@ public class ProxyHandler implements Runnable {
     private void relayMessages(ProxySession session) {
         SecureTCPChannel clientChannel = session.getClientChannel();
         SecureTCPChannel serverChannel = session.getServerChannel();
+        KeyManager sessionKeyManager = session.getKeyManager();
         String clientId = session.getClientId();
         String serverId = session.getServerId();
 
@@ -130,7 +128,7 @@ public class ProxyHandler implements Runnable {
                 }
 
                 // Re-encriptar e enviar ao servidor interno
-                MessageTCP serverMessage = reencryptForServer(serverChannel, serverId, clientMessage, clientId);
+                MessageTCP serverMessage = reencryptForServer(serverChannel, serverId, clientMessage, clientId, sessionKeyManager);
                 if (serverMessage != null) {
                     serverChannel.send(serverMessage);
                 }
@@ -145,7 +143,7 @@ public class ProxyHandler implements Runnable {
                 // Verificar resposta do servidor
                 if (serverChannel.verify(serverResponse)) {
                     // Re-encriptar e enviar ao cliente
-                    MessageTCP clientResponse = reencryptForClient(clientChannel, clientId, serverResponse, serverId);
+                    MessageTCP clientResponse = reencryptForClient(clientChannel, clientId, serverResponse, serverId, sessionKeyManager);
                     if (clientResponse != null) {
                         clientChannel.send(clientResponse);
                     }
@@ -161,11 +159,12 @@ public class ProxyHandler implements Runnable {
     }
 
     private MessageTCP reencryptForServer(SecureTCPChannel serverChannel, String serverId, 
-                                          MessageTCP originalMessage, String originalSenderId) {
+                                          MessageTCP originalMessage, String originalSenderId,
+                                          KeyManager keyManager) {
         // Decifrar envelope do cliente e re-encriptar para o servidor
         if (originalMessage.getType() == null && originalMessage.getEncryptedPayload() != null) {
             // Envelope cifrado
-            EnvelopeTCP envelope = decryptEnvelopeWithKeys(originalMessage, originalSenderId);
+            EnvelopeTCP envelope = decryptEnvelopeWithKeys(originalMessage, originalSenderId, keyManager);
             if (envelope != null) {
                 return serverChannel.buildEncryptedEnvelope(serverId, envelope.getType(), 
                                                             envelope.getPayload(), envelope.getJwtToken());
@@ -175,7 +174,7 @@ public class ProxyHandler implements Runnable {
         // Mensagem simples cifrada
         MessageTypeTCP type = originalMessage.getType();
         if (type != null && originalMessage.getEncryptedPayload() != null) {
-            String payload = decryptWithKeys(originalMessage, originalSenderId);
+            String payload = decryptWithKeys(originalMessage, originalSenderId, keyManager);
             if (payload != null) {
                 return serverChannel.buildEncrypted(serverId, type, payload);
             }
@@ -190,10 +189,11 @@ public class ProxyHandler implements Runnable {
     }
 
     private MessageTCP reencryptForClient(SecureTCPChannel clientChannel, String clientId,
-                                          MessageTCP serverResponse, String serverId) {
+                                          MessageTCP serverResponse, String serverId,
+                                          KeyManager keyManager) {
         // Decifrar envelope do servidor e re-encriptar para o cliente
         if (serverResponse.getType() == null && serverResponse.getEncryptedPayload() != null) {
-            EnvelopeTCP envelope = decryptEnvelopeWithKeys(serverResponse, serverId);
+            EnvelopeTCP envelope = decryptEnvelopeWithKeys(serverResponse, serverId, keyManager);
             if (envelope != null) {
                 return clientChannel.buildEncryptedEnvelope(clientId, envelope.getType(),
                                                             envelope.getPayload(), envelope.getJwtToken());
@@ -203,7 +203,7 @@ public class ProxyHandler implements Runnable {
         // Mensagem simples cifrada
         MessageTypeTCP type = serverResponse.getType();
         if (type != null && serverResponse.getEncryptedPayload() != null) {
-            String payload = decryptWithKeys(serverResponse, serverId);
+            String payload = decryptWithKeys(serverResponse, serverId, keyManager);
             if (payload != null) {
                 return clientChannel.buildEncrypted(clientId, type, payload);
             }
@@ -217,9 +217,9 @@ public class ProxyHandler implements Runnable {
         return null;
     }
 
-    private EnvelopeTCP decryptEnvelopeWithKeys(MessageTCP message, String peerId) {
+    private EnvelopeTCP decryptEnvelopeWithKeys(MessageTCP message, String peerId, KeyManager keyManager) {
         try {
-            var aesKey = proxyKeyManager.getPeerAESKey(peerId);
+            var aesKey = keyManager.getPeerAESKey(peerId);
             var aes = new com.project.crypto.AES(aesKey);
             String envelopeJson = aes.decrypt(message.getEncryptedPayload());
             return EnvelopeTCP.fromJson(envelopeJson);
@@ -229,9 +229,9 @@ public class ProxyHandler implements Runnable {
         }
     }
 
-    private String decryptWithKeys(MessageTCP message, String peerId) {
+    private String decryptWithKeys(MessageTCP message, String peerId, KeyManager keyManager) {
         try {
-            var aesKey = proxyKeyManager.getPeerAESKey(peerId);
+            var aesKey = keyManager.getPeerAESKey(peerId);
             var aes = new com.project.crypto.AES(aesKey);
             return aes.decrypt(message.getEncryptedPayload());
         } catch (Exception e) {

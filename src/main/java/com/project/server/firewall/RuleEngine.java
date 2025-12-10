@@ -50,9 +50,10 @@ public class RuleEngine {
 
     public void recordConnection(String ip, int port) {
         long now = System.currentTimeMillis();
+        String rateKey = ip + ":" + port;
 
-        // Registrar timestamp da conexao
-        connectionTimestamps.computeIfAbsent(ip, k -> new ArrayList<>()).add(now);
+        // Registrar timestamp da conexao (por servico)
+        connectionTimestamps.computeIfAbsent(rateKey, k -> new ArrayList<>()).add(now);
 
         // Registrar porta acessada
         long lastAccess = portAccessTimes.getOrDefault(ip, 0L);
@@ -63,20 +64,21 @@ public class RuleEngine {
         portAccessTimes.put(ip, now);
 
         // Limpar timestamps antigos periodicamente
-        cleanOldTimestamps(ip);
+        cleanOldTimestamps(rateKey);
     }
 
-    public boolean isRateLimitExceeded(String ip) {
+    public boolean isRateLimitExceeded(String ip, int port) {
+        String rateKey = ip + ":" + port;
         long now = System.currentTimeMillis();
         long cutoff = now - RATE_LIMIT_WINDOW_MS;
 
-        List<Long> timestamps = connectionTimestamps.getOrDefault(ip, List.of());
+        List<Long> timestamps = connectionTimestamps.getOrDefault(rateKey, List.of());
         long recentCount = timestamps.stream()
                 .filter(t -> t >= cutoff)
                 .count();
 
         if (recentCount > MAX_CONNECTIONS_PER_SECOND) {
-            logger.warn("Rate limit excedido para IP {}: {} conexoes/seg", ip, recentCount);
+            logger.warn("Rate limit excedido para {}:{} - {} conexoes/seg", ip, port, recentCount);
             return true;
         }
 
@@ -115,7 +117,7 @@ public class RuleEngine {
         recordConnection(ip, port);
 
         // Passo 3 - Verificar rate limit
-        if (isRateLimitExceeded(ip)) {
+        if (isRateLimitExceeded(ip, port)) {
             return new CheckResult(false, "RATE_LIMIT", "Limite de conexoes excedido");
         }
 
@@ -128,9 +130,9 @@ public class RuleEngine {
         return new CheckResult(true, null, null);
     }
 
-    private void cleanOldTimestamps(String ip) {
+    private void cleanOldTimestamps(String rateKey) {
         long cutoff = System.currentTimeMillis() - RATE_LIMIT_WINDOW_MS * 10;
-        List<Long> timestamps = connectionTimestamps.get(ip);
+        List<Long> timestamps = connectionTimestamps.get(rateKey);
         if (timestamps != null) {
             timestamps.removeIf(t -> t < cutoff);
         }

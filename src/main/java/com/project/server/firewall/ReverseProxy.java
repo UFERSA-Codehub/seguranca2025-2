@@ -102,7 +102,6 @@ public class ReverseProxy implements IServer {
             target.host(),
             target.port(),
             target.serviceName(),
-            keyManager,
             idsClient,
             target.isHttp()
         );

@@ -2,6 +2,7 @@ package com.project.server.firewall;
 
 import java.io.IOException;
 import java.net.Socket;
+import java.security.NoSuchAlgorithmException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,21 +15,22 @@ import com.project.network.SecureTCPChannel;
 public class ProxySession {
     private static final Logger logger = LoggerFactory.getLogger("ProxySession");
 
-    private final KeyManager proxyKeyManager;
     private final Socket clientSocket;
     private final Socket serverSocket;
     private final String clientIp;
     private final String serviceName;
 
+    // Cada sessao tem seu proprio KeyManager para evitar colisao de chaves
+    private KeyManager sessionKeyManager;
     private SecureTCPChannel clientChannel;
     private SecureTCPChannel serverChannel;
     private String clientId;
     private String serverId;
+    private String proxySessionId;
     private boolean established;
 
-    public ProxySession(KeyManager proxyKeyManager, Socket clientSocket, Socket serverSocket, 
+    public ProxySession(Socket clientSocket, Socket serverSocket, 
                        String clientIp, String serviceName) {
-        this.proxyKeyManager = proxyKeyManager;
         this.clientSocket = clientSocket;
         this.serverSocket = serverSocket;
         this.clientIp = clientIp;
@@ -38,9 +40,12 @@ public class ProxySession {
 
     public boolean establish() {
         try {
-            // Passo 1 - Criar canal com cliente (impersonando o servico interno)
+            // Criar KeyManager proprio
+            this.sessionKeyManager = new KeyManager();
+            
+            // Passo 1 - Criar canal com cliente (se passando pelo serviço interno)
             // Usamos o serviceName para que o cliente pense estar falando com AUTH/EDGE/etc
-            clientChannel = new SecureTCPChannel(serviceName.toUpperCase(), proxyKeyManager, clientSocket);
+            clientChannel = new SecureTCPChannel(serviceName.toUpperCase(), sessionKeyManager, clientSocket);
 
             // Passo 2 - Receber HELLO do cliente
             MessageTCP clientHello = clientChannel.receive();
@@ -50,7 +55,8 @@ public class ProxySession {
                 return false;
             }
             clientId = clientHello.getSenderId();
-            logger.debug("Recebido HELLO de {}", clientId);
+            proxySessionId = "RP-" + clientId;
+            logger.debug("Recebido HELLO de {} (sessao: {})", clientId, proxySessionId);
 
             // Passo 3 - Responder CHALLENGE ao cliente (impersonando o servico)
             MessageTCP challengeToClient = clientChannel.handleHello(clientHello);
@@ -61,8 +67,8 @@ public class ProxySession {
             clientChannel.send(challengeToClient);
             logger.debug("CHALLENGE enviado para {} (como {})", clientId, serviceName.toUpperCase());
 
-            // Passo 4 - Criar canal com servidor interno
-            serverChannel = new SecureTCPChannel("ReverseProxy", proxyKeyManager, serverSocket);
+            // Passo 4 - Criar canal com servidor interno (usando ID unico para evitar colisao de chaves)
+            serverChannel = new SecureTCPChannel(proxySessionId, sessionKeyManager, serverSocket);
 
             // Passo 5 - Enviar HELLO ao servidor (proxy atua como cliente)
             MessageTCP helloToServer = serverChannel.buildHello();
@@ -89,6 +95,9 @@ public class ProxySession {
             logger.info("ProxySession estabelecida: {} <-> Proxy ({}) <-> {}", clientId, serviceName, serverId);
             return true;
 
+        } catch (NoSuchAlgorithmException e) {
+            logger.error("Erro ao criar KeyManager para sessao: {}", e.getMessage());
+            return false;
         } catch (IOException e) {
             logger.error("Erro ao estabelecer ProxySession: {}", e.getMessage());
             return false;
@@ -123,13 +132,22 @@ public class ProxySession {
         return established;
     }
 
+    public KeyManager getKeyManager() {
+        return sessionKeyManager;
+    }
+
     public void close() {
         established = false;
+        
         if (clientChannel != null) {
             clientChannel.close();
         }
+        
         if (serverChannel != null) {
             serverChannel.close();
         }
+        
+        // KeyManager da sessao sera garbage collected junto com a sessao
+        sessionKeyManager = null;
     }
 }
