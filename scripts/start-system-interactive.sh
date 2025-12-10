@@ -265,8 +265,8 @@ tmux new-window -t "$TMUX_SESSION" -n "Testes"
 tmux split-window -h -t "$TMUX_SESSION:Testes"
 
 # Enviar comandos para cada painel (preparados, nao executam)
-tmux send-keys -t "$TMUX_SESSION:Testes.0" "cd '$PROJECT_DIR' && mvn exec:java -Dexec.mainClass='$MALICIOUS_SENSOR_CLASS' -Dexec.args='--mode ANOMALY_DATA --password sensor123'"
-tmux send-keys -t "$TMUX_SESSION:Testes.1" "cd '$PROJECT_DIR' && mvn exec:java -Dexec.mainClass='$CLIENT_APP_CLASS'"
+tmux send-keys -t "$TMUX_SESSION:Testes.0" "mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$MALICIOUS_SENSOR_CLASS' -Dexec.args='--mode ANOMALY_DATA --password sensor123'"
+tmux send-keys -t "$TMUX_SESSION:Testes.1" "mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$CLIENT_APP_CLASS'"
 
 # Definir títulos APÓS enviar comandos
 tmux select-pane -t "$TMUX_SESSION:Testes.0" -T "⚠️ MaliciousSensor (ENTER para iniciar)"
