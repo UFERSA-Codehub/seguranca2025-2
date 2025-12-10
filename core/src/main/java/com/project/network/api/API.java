@@ -1,0 +1,1 @@
+// Here will be an API class to make available network-related communication, for access by other modules.
