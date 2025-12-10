@@ -7,9 +7,9 @@
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-POM_FILE="$PROJECT_DIR/pom.xml"
-PID_DIR="$PROJECT_DIR/.system-pids"
-LOG_DIR="$PROJECT_DIR/.system-pids"
+POM_FILE="$PROJECT_DIR/core/pom.xml"
+PID_DIR="$PROJECT_DIR/core/.system-pids"
+LOG_DIR="$PROJECT_DIR/core/.system-pids"
 
 # Criar diretórios se não existirem
 mkdir -p "$PID_DIR"

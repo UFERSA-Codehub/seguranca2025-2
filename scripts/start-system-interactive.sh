@@ -57,7 +57,7 @@ if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
 fi
 
 echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║       SISTEMA DE MONITORAMENTO AMBIENTAL                       ║"
+echo "║               SISTEMA DE MONITORAMENTO AMBIENTAL               ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -65,7 +65,7 @@ echo ""
 # FASE 2: CRIAR ESTRUTURA TMUX
 ###############################################################################
 
-echo -e "${GREEN}📊 Criando sessão tmux com 4 janelas...${NC}"
+echo -e "${GREEN}Criando sessão tmux com 4 janelas...${NC}"
 echo ""
 
 # Criar sessão com janela "Interna" (índice base 1)
@@ -92,73 +92,73 @@ tmux set-window-option -g automatic-rename off
 ###############################################################################
 
 echo -e "${GREEN}[1/7]${NC} Iniciando Discovery Service (UDP:4000)..."
-mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/discovery.log" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$DISCOVERY_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/discovery.log" 2>&1 &
+    > /dev/null 2>&1 &
 DISCOVERY_PID=$!
 echo "$DISCOVERY_PID" > "$PID_DIR/discovery.pid"
-echo -e "${GREEN}✓${NC} Discovery iniciado (PID: $DISCOVERY_PID)"
+echo -e "${GREEN}  ✓${NC} Discovery iniciado (PID: $DISCOVERY_PID)"
 sleep $DISCOVERY_DELAY
 
 echo -e "${GREEN}[2/7]${NC} Iniciando IDS (TCP:3002)..."
-mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/ids.log" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$IDS_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/ids.log" 2>&1 &
+    > /dev/null 2>&1 &
 IDS_PID=$!
 echo "$IDS_PID" > "$PID_DIR/ids.pid"
-echo -e "${GREEN}✓${NC} IDS iniciado (PID: $IDS_PID)"
+echo -e "${GREEN}  ✓${NC} IDS iniciado (PID: $IDS_PID)"
 sleep $IDS_DELAY
 
 echo -e "${GREEN}[3/7]${NC} Iniciando AuthServer (TCP:4001)..."
-mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/auth.log" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$AUTH_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/auth.log" 2>&1 &
+    > /dev/null 2>&1 &
 AUTH_PID=$!
 echo "$AUTH_PID" > "$PID_DIR/auth.pid"
-echo -e "${GREEN}✓${NC} AuthServer iniciado (PID: $AUTH_PID)"
+echo -e "${GREEN}  ✓${NC} AuthServer iniciado (PID: $AUTH_PID)"
 sleep $AUTH_DELAY
 
 echo -e "${GREEN}[4/7]${NC} Iniciando Edge Server (TCP:5000, IDS:5001)..."
-mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/edge.log" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$EDGE_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/edge.log" 2>&1 &
+    > /dev/null 2>&1 &
 EDGE_PID=$!
 echo "$EDGE_PID" > "$PID_DIR/edge.pid"
-echo -e "${GREEN}✓${NC} Edge Server iniciado (PID: $EDGE_PID)"
+echo -e "${GREEN}  ✓${NC} Edge Server iniciado (PID: $EDGE_PID)"
 sleep $EDGE_DELAY
 
 echo -e "${GREEN}[5/7]${NC} Iniciando Datacenter (TCP:8080, HTTP:9090)..."
-mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/datacenter.log" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$DATACENTER_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/datacenter.log" 2>&1 &
+    > /dev/null 2>&1 &
 DATACENTER_PID=$!
 echo "$DATACENTER_PID" > "$PID_DIR/datacenter.pid"
-echo -e "${GREEN}✓${NC} Datacenter iniciado (PID: $DATACENTER_PID)"
+echo -e "${GREEN}  ✓${NC} Datacenter iniciado (PID: $DATACENTER_PID)"
 sleep $DATACENTER_DELAY
 
 echo -e "${GREEN}[6/7]${NC} Iniciando ReverseProxy (TCP:3001, 3011, 3021)..."
-mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/proxy.log" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$PROXY_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/proxy.log" 2>&1 &
+    > /dev/null 2>&1 &
 PROXY_PID=$!
 echo "$PROXY_PID" > "$PID_DIR/proxy.pid"
-echo -e "${GREEN}✓${NC} ReverseProxy iniciado (PID: $PROXY_PID)"
+echo -e "${GREEN}  ✓${NC} ReverseProxy iniciado (PID: $PROXY_PID)"
 sleep $PROXY_DELAY
 
 echo -e "${GREEN}[7/7]${NC} Iniciando PacketFilter (TCP:3000, 3010, 3020)..."
-mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/pfilter.log" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$PFILTER_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
-    > "$LOG_DIR/pfilter.log" 2>&1 &
+    > /dev/null 2>&1 &
 PFILTER_PID=$!
 echo "$PFILTER_PID" > "$PID_DIR/pfilter.pid"
-echo -e "${GREEN}✓${NC} PacketFilter iniciado (PID: $PFILTER_PID)"
+echo -e "${GREEN}  ✓${NC} PacketFilter iniciado (PID: $PFILTER_PID)"
 sleep $PFILTER_DELAY
 
 ###############################################################################
@@ -174,10 +174,10 @@ tmux split-window -h -t "$TMUX_SESSION:Interna.2"
 tmux select-layout -t "$TMUX_SESSION:Interna" even-horizontal
 
 # Enviar comandos para cada painel
-tmux send-keys -t "$TMUX_SESSION:Interna.0" "tail -f '$LOG_DIR/discovery.log'" C-m
-tmux send-keys -t "$TMUX_SESSION:Interna.1" "tail -f '$LOG_DIR/auth.log'" C-m
-tmux send-keys -t "$TMUX_SESSION:Interna.2" "tail -f '$LOG_DIR/edge.log'" C-m
-tmux send-keys -t "$TMUX_SESSION:Interna.3" "tail -f '$LOG_DIR/datacenter.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:Interna.0" "tail -F --retry '$LOG_DIR/discovery.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:Interna.1" "tail -F --retry '$LOG_DIR/auth.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:Interna.2" "tail -F --retry '$LOG_DIR/edge.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:Interna.3" "tail -F --retry '$LOG_DIR/datacenter.log'" C-m
 
 # Definir títulos APÓS enviar comandos
 tmux select-pane -t "$TMUX_SESSION:Interna.0" -T "🔍 Discovery (UDP:4000)"
@@ -199,9 +199,9 @@ tmux split-window -h -t "$TMUX_SESSION:DMZ.0"
 tmux select-layout -t "$TMUX_SESSION:DMZ" even-horizontal
 
 # Enviar comandos para cada painel
-tmux send-keys -t "$TMUX_SESSION:DMZ.0" "tail -f '$LOG_DIR/pfilter.log'" C-m
-tmux send-keys -t "$TMUX_SESSION:DMZ.1" "tail -f '$LOG_DIR/proxy.log'" C-m
-tmux send-keys -t "$TMUX_SESSION:DMZ.2" "tail -f '$LOG_DIR/ids.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:DMZ.0" "tail -F --retry '$LOG_DIR/pfilter.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:DMZ.1" "tail -F --retry '$LOG_DIR/proxy.log'" C-m
+tmux send-keys -t "$TMUX_SESSION:DMZ.2" "tail -F --retry '$LOG_DIR/ids.log'" C-m
 
 # Definir títulos APÓS enviar comandos
 tmux select-pane -t "$TMUX_SESSION:DMZ.0" -T "🔥 PacketFilter (TCP:3000,3010,3020)"
@@ -232,16 +232,16 @@ for sensor_config in "${SENSORS[@]}"; do
     
     sensor_args="$sensor_id $password $DISCOVERY_HOST $DISCOVERY_PORT"
     
-    mvn -f "$POM_FILE" exec:java \
+    MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/$sensor_id.log" mvn -f "$POM_FILE" exec:java \
         -Dexec.mainClass="$SENSOR_CLASS" \
         -Dexec.args="$sensor_args" \
         -Dexec.cleanupDaemonThreads=false \
-        > "$LOG_DIR/$sensor_id.log" 2>&1 &
+        > /dev/null 2>&1 &
     
     SENSOR_PID=$!
     echo "$SENSOR_PID" > "$PID_DIR/$sensor_id.pid"
     
-    tmux send-keys -t "$TMUX_SESSION:Sensores.$painel_idx" "tail -f '$LOG_DIR/$sensor_id.log'" C-m
+    tmux send-keys -t "$TMUX_SESSION:Sensores.$painel_idx" "tail -F --retry '$LOG_DIR/$sensor_id.log'" C-m
     
     echo -e "${GREEN}  ✓${NC} $sensor_id iniciado (PID: $SENSOR_PID)"
     sleep $SENSOR_DELAY

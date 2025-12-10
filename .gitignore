@@ -10,7 +10,9 @@ mvnw
 mvnw.cmd
 
 #.vscode
+
 #*.log
+.system-pids/
 
 .env
 .project
@@ -21,4 +23,12 @@ relatorio_*.*
 #.system-pids/
 
 # Ignorar pom de exemplos
-**/pom.xml
+exemplos/**/pom.xml
+
+# Dashboard (React)
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.vite/
+
+# Collector
+collector/target/
