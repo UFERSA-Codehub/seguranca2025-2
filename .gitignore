@@ -10,7 +10,9 @@ mvnw
 mvnw.cmd
 
 #.vscode
+
 #*.log
+.system-pids/
 
 .env
 .project
