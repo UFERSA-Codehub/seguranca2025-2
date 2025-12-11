@@ -16,6 +16,8 @@ import org.slf4j.LoggerFactory;
 
 import com.project.crypto.KeyManager;
 import com.project.server.IServer;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 
 public class PacketFilter implements IServer {
     private static final Logger logger = LoggerFactory.getLogger("Firewall.PacketFilter");
@@ -53,6 +55,7 @@ public class PacketFilter implements IServer {
     @Override
     public void start() {
         logger.info("[PacketFilter] Iniciando...");
+        logger.info("[PacketFilter] Tracing habilitado: {}", TracerFactory.isEnabled());
 
         try {
             this.keyManager = new KeyManager();
@@ -107,14 +110,37 @@ public class PacketFilter implements IServer {
     private void handleConnection(Socket clientSocket, int targetPort, String serviceName) {
         String clientIp = extractIp(clientSocket);
         int clientPort = clientSocket.getPort();
+        String clientAddr = clientIp + ":" + clientPort;
 
         logger.info("Nova conexao de {} para {}", clientIp, serviceName);
+
+        TracerFactory.getTracer().trace(TraceEvent.create(
+            "PACKET_FILTER",
+            "TCP",
+            "RECEIVE",
+            clientAddr,
+            "CONNECTION",
+            null,
+            null,
+            "SENSOR"
+        ));
 
         // Verificar regras
         RuleEngine.CheckResult result = ruleEngine.checkConnection(clientIp, targetPort);
 
         if (!result.allowed()) {
             logger.warn("Conexao bloqueada de {} - {}: {}", clientIp, result.alertType(), result.reason());
+
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                "PACKET_FILTER",
+                "TCP",
+                "SEND",
+                clientAddr,
+                "BLOCK",
+                null,
+                result.reason(),
+                "SENSOR"
+            ));
 
             // Enviar alerta ao IDS
             idsClient.sendAlert(clientIp, clientPort, serviceName, result.alertType(), result.reason());
@@ -134,6 +160,17 @@ public class PacketFilter implements IServer {
             serverSocket.connect(new InetSocketAddress(REVERSE_PROXY_HOST, targetPort), 5000);
 
             logger.debug("Forwarding {} -> ReverseProxy:{}", clientIp, targetPort);
+
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                "PACKET_FILTER",
+                "TCP",
+                "SEND",
+                REVERSE_PROXY_HOST + ":" + targetPort,
+                "FORWARD",
+                null,
+                null,
+                "REVERSE_PROXY"
+            ));
 
             ConnectionForwarder forwarder = new ConnectionForwarder(clientSocket, serverSocket, clientIp, serviceName);
             threadPool.submit(forwarder);

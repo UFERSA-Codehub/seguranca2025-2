@@ -18,6 +18,8 @@ import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
 import com.project.network.SecureTCPChannel;
 import com.project.server.IServer;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 
 public class ServerIDS implements IServer {
     private static final Logger logger = LoggerFactory.getLogger("IDS");
@@ -96,6 +98,17 @@ public class ServerIDS implements IServer {
             if (terminateMsg != null) {
                 edgeChannel.send(terminateMsg);
                 logger.info("TERMINATE enviado para Edge - IP alvo: {}", targetIp);
+
+                TracerFactory.getTracer().trace(TraceEvent.create(
+                    "IDS",
+                    "TCP",
+                    "SEND",
+                    EDGE_HOST + ":" + EDGE_COMMAND_PORT,
+                    "TERMINATE",
+                    null,
+                    payload.toString(),
+                    "EDGE"
+                ));
 
                 MessageTCP response = edgeChannel.receive();
                 if (response != null && edgeChannel.verify(response)) {

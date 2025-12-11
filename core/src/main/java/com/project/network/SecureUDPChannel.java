@@ -24,24 +24,45 @@ import com.project.message.udp.EnvelopeUDP;
 import com.project.message.udp.MessageTypeUDP;
 import com.project.message.udp.MessageUDP;
 
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
+
 public class SecureUDPChannel {
     private static final int BUFFER_SIZE = 4096;
     private static final Logger logger = LoggerFactory.getLogger("Network.UDPChannel");
     private final String entityId;
     private final KeyManager keyManager;
     private final DatagramSocket socket;
+    private String tracePeerId;
 
     public SecureUDPChannel(String entityId, KeyManager keyManager, DatagramSocket socket) {
         this.entityId = entityId;
         this.keyManager = keyManager;
         this.socket = socket;
+        this.tracePeerId = null;
     }
+
+    public void setTracePeerId(String peerId) {
+        this.tracePeerId = peerId;
+    }
+
     // ==================== ENVIO ====================
     public void send(MessageUDP message, InetAddress address, int port) {
         try {
             byte[] data = message.toJson().getBytes();
             socket.send(new DatagramPacket(data, data.length, address, port));
             logger.debug("Mensagem {} enviada para {}:{}", message.getType(), address.getHostAddress(), port);
+            
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                entityId,
+                "UDP",
+                "SEND",
+                address.getHostAddress() + ":" + port,
+                message.getType() != null ? message.getType().name() : "ENVELOPE",
+                message.getEncryptedPayload(),
+                null,
+                tracePeerId
+            ));
         } catch (IOException e) {
             logger.error("Erro ao enviar para {}:{} - {}", address.getHostAddress(), port, e.getMessage());
         }
@@ -60,7 +81,24 @@ public class SecureUDPChannel {
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
             socket.receive(packet);
             String json = new String(packet.getData(), 0, packet.getLength());
-            return new ReceivedPacket(MessageUDP.fromJson(json), packet.getAddress(), packet.getPort());
+            MessageUDP message = MessageUDP.fromJson(json);
+            
+            // Traçar apenas mensagens não cifradas (HELLO, CHALLENGE)
+            // Mensagens cifradas serão traçadas após a decifragem
+            if (message.getEncryptedPayload() == null) {
+                TracerFactory.getTracer().trace(TraceEvent.create(
+                    entityId,
+                    "UDP",
+                    "RECEIVE",
+                    packet.getAddress().getHostAddress() + ":" + packet.getPort(),
+                    message.getType() != null ? message.getType().name() : "UNKNOWN",
+                    null,
+                    null,
+                    message.getSenderId()
+                ));
+            }
+            
+            return new ReceivedPacket(message, packet.getAddress(), packet.getPort());
         } catch (SocketTimeoutException e) {
             logger.warn("Timeout aguardando mensagem");
             return null;
@@ -128,7 +166,20 @@ public class SecureUDPChannel {
     public String decrypt(String peerId, MessageUDP message) {
         try {
             AES aes = new AES(keyManager.getPeerAESKey(peerId));
-            return aes.decrypt(message.getEncryptedPayload());
+            String decrypted = aes.decrypt(message.getEncryptedPayload());
+            
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                entityId,
+                "UDP",
+                "RECEIVE",
+                peerId,
+                message.getType() != null ? message.getType().name() : "PAYLOAD",
+                message.getEncryptedPayload(),
+                decrypted,
+                peerId
+            ));
+            
+            return decrypted;
         } catch (GeneralSecurityException e) {
             logger.error("Erro ao decifrar mensagem de '{}': {}", peerId, e.getMessage());
             return null;
@@ -184,7 +235,20 @@ public class SecureUDPChannel {
         try {
             AES aes = new AES(keyManager.getPeerAESKey(peerId));
             String envelopeJson = aes.decrypt(message.getEncryptedPayload());
-            return EnvelopeUDP.fromJson(envelopeJson);
+            EnvelopeUDP envelope = EnvelopeUDP.fromJson(envelopeJson);
+            
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                entityId,
+                "UDP",
+                "RECEIVE",
+                peerId,
+                envelope.getType() != null ? envelope.getType().name() : "ENVELOPE",
+                message.getEncryptedPayload(),
+                envelopeJson,
+                peerId
+            ));
+            
+            return envelope;
         } catch (GeneralSecurityException e) {
             logger.error("Erro ao decifrar envelope de '{}': {}", peerId, e.getMessage());
             return null;

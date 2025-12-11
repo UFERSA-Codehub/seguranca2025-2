@@ -20,6 +20,8 @@ import com.sun.net.httpserver.HttpServer;
 
 import com.project.server.datacenter.db.DataStore;
 import com.project.server.datacenter.db.ReportService;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 
 public class BrowserHttpHandler {
     private static final Logger logger = LoggerFactory.getLogger("Datacenter.BrowserHttpHandler");
@@ -124,6 +126,21 @@ public class BrowserHttpHandler {
 
         if ("POST".equals(exchange.getRequestMethod())) {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            
+            String remoteAddress = exchange.getRemoteAddress() != null 
+                ? exchange.getRemoteAddress().toString() 
+                : "unknown";
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                "DATACENTER",
+                "HTTP",
+                "RECEIVE",
+                remoteAddress,
+                "/browser/login",
+                "[CREDENTIALS]",
+                null,
+                null
+            ));
+            
             Map<String, String> params = parseFormData(body);
 
             String username = params.get("username");
@@ -393,6 +410,21 @@ public class BrowserHttpHandler {
     }
 
     private void sendHtml(HttpExchange exchange, int status, String html) throws IOException {
+        String remoteAddress = exchange.getRemoteAddress() != null 
+            ? exchange.getRemoteAddress().toString() 
+            : "unknown";
+        
+        TracerFactory.getTracer().trace(TraceEvent.create(
+            "DATACENTER",
+            "HTTP",
+            "SEND",
+            remoteAddress,
+            exchange.getRequestURI().getPath() + " [" + status + "]",
+            html.length() > 500 ? html.substring(0, 500) + "..." : html,
+            null,
+            null
+        ));
+        
         byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
         exchange.sendResponseHeaders(status, bytes.length);

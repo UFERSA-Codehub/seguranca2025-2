@@ -14,6 +14,8 @@ import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
 import com.project.network.SecureTCPChannel;
 import com.project.server.ids.AlertStore.Alert;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 
 public class TcpHandler implements Runnable {
     private static final Logger logger = LoggerFactory.getLogger("IDS.TcpHandler");
@@ -107,6 +109,17 @@ public class TcpHandler implements Runnable {
 
     private void handleAlert(SecureTCPChannel channel, String peerId, String payload) {
         try {
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                "IDS",
+                "TCP",
+                "RECEIVE",
+                clientSocket.getRemoteSocketAddress().toString(),
+                "ALERT",
+                null,
+                payload,
+                peerId
+            ));
+
             JsonObject alertData = gson.fromJson(payload, JsonObject.class);
 
             String sourceIp = alertData.get("sourceIp").getAsString();

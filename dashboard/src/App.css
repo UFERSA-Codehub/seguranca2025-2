@@ -1,0 +1,340 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #0f172a;
+    color: #e2e8f0;
+}
+
+.app {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+.topology {
+    flex: 1;
+    height: 100%;
+    background-color: #1e293b;
+    position: relative;
+}
+
+.sidebar {
+    width: 380px;
+    background-color: #0f172a;
+    border-left: 1px solid #334155;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.header {
+    padding: 16px;
+    border-bottom: 1px solid #334155;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header h2 {
+    flex: 1;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.dot.connected {
+    background-color: #22c55e;
+}
+
+.dot.disconnected {
+    background-color: #ef4444;
+}
+
+.clear-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    background-color: #334155;
+    color: #e2e8f0;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.clear-btn:hover {
+    background-color: #475569;
+}
+
+.buffer-badge {
+    padding: 4px 8px;
+    font-size: 11px;
+    background-color: #f59e0b;
+    color: #1e293b;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.events-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.event-item {
+    padding: 10px;
+    margin-bottom: 6px;
+    background-color: #1e293b;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.event-item:hover {
+    border-color: #475569;
+}
+
+.event-item.selected {
+    border-color: #6366f1;
+    background-color: #1e1b4b;
+}
+
+.event-item.active {
+    border-color: #22c55e;
+    background-color: #14532d;
+}
+
+.event-item.active.selected {
+    border-color: #22c55e;
+    background-color: #14532d;
+}
+
+.event-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.event-flow {
+    font-weight: 600;
+    font-size: 13px;
+    color: #f8fafc;
+}
+
+.message-type {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background-color: #334155;
+    color: #94a3b8;
+}
+
+.event-meta {
+    display: flex;
+    gap: 8px;
+    font-size: 11px;
+    color: #64748b;
+}
+
+.no-events {
+    padding: 24px;
+    text-align: center;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.payload-panel {
+    border-top: 1px solid #334155;
+    padding: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.payload-panel h3 {
+    font-size: 14px;
+    margin-bottom: 12px;
+    color: #f8fafc;
+}
+
+.payload-section {
+    margin-bottom: 12px;
+}
+
+.payload-section h4 {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+.payload-section pre {
+    background-color: #1e293b;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: #a5f3fc;
+    max-height: 100px;
+    overflow-y: auto;
+}
+
+.react-flow__node {
+    font-size: 12px;
+}
+
+.react-flow__edge-path {
+    stroke: #64748b;
+    stroke-width: 1;
+}
+
+.react-flow__controls {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+}
+
+.react-flow__controls-button {
+    background-color: #1e293b;
+    border-color: #334155;
+    fill: #94a3b8;
+}
+
+.react-flow__controls-button:hover {
+    background-color: #334155;
+}
+
+/* Playback HUD */
+.playback-hud {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(15, 23, 42, 0.95);
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 12px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 10;
+    backdrop-filter: blur(8px);
+    min-width: 320px;
+}
+
+.playback-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+}
+
+.timeline-row {
+    gap: 12px;
+}
+
+/* Transport Controls */
+.transport-controls {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.transport-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #334155;
+    color: #e2e8f0;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.transport-btn:hover:not(:disabled) {
+    background-color: #475569;
+}
+
+.transport-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.transport-btn.play-pause {
+    width: 44px;
+    height: 44px;
+    background-color: #22c55e;
+}
+
+.transport-btn.play-pause:hover:not(:disabled) {
+    background-color: #16a34a;
+}
+
+/* Timeline Scrubber */
+.timeline-scrubber {
+    flex: 1;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: #334155;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.timeline-scrubber:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.timeline-scrubber::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background-color: #6366f1;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.timeline-scrubber::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.timeline-scrubber::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background-color: #6366f1;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.event-counter {
+    font-size: 12px;
+    color: #94a3b8;
+    white-space: nowrap;
+    min-width: 70px;
+    text-align: right;
+}

@@ -8,6 +8,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 POM_FILE="$PROJECT_DIR/core/pom.xml"
+API_POM_FILE="$PROJECT_DIR/api/pom.xml"
+DASHBOARD_DIR="$PROJECT_DIR/dashboard"
 PID_DIR="$PROJECT_DIR/core/.system-pids"
 LOG_DIR="$PROJECT_DIR/core/.system-pids"
 
@@ -29,6 +31,9 @@ EDGE_CLASS="com.project.server.edge.ServerEdge"
 DATACENTER_CLASS="com.project.server.datacenter.ServerDatacenter"
 PROXY_CLASS="com.project.server.firewall.ReverseProxy"
 PFILTER_CLASS="com.project.server.firewall.PacketFilter"
+
+# Classes Java - Tracing
+TRACE_COLLECTOR_CLASS="com.project.collector.TraceCollector"
 
 # Classes Java - Clientes
 SENSOR_CLASS="com.project.client.sensor.Sensor"
@@ -52,6 +57,12 @@ declare -a SENSORS=(
     "SENSOR_002|senha456"
     "SENSOR_003|senha789"
     "SENSOR_004|senha321"
+)
+
+# Sensores para modo trace (menos ruido na visualizacao)
+declare -a TRACE_SENSORS=(
+    "SENSOR_001|senha123"
+    "SENSOR_002|senha456"
 )
 
 # Configuração do Discovery Server (Sensor conecta ao Discovery primeiro)

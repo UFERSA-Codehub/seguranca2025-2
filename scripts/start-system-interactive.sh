@@ -12,6 +12,7 @@
 #   Window 2 [Interna]:     Discovery | AuthServer | Edge | Datacenter
 #   Window 3 [Sensores]:    Sensor 001-004 (2x2 grid)
 #   Window 4 [Testes]:      MaliciousSensor (manual) | ClientApp (manual)
+#   Window 5 [Trace]:       TraceCollector | Dashboard (se TRACE_ENABLED=true)
 #
 # Ordem de Inicializacao:
 #   1. Discovery (UDP:4000)
@@ -21,13 +22,22 @@
 #   5. Datacenter (TCP:8080, HTTP:9090)
 #   6. ReverseProxy (TCP:3001, 3011, 3021)
 #   7. PacketFilter (TCP:3000, 3010, 3020)
+#   8. TraceCollector (UDP:6000, WS:6001) - se tracing habilitado
 #
 # Uso:
 #   ./scripts/start-system-interactive.sh
+#   TRACE_ENABLED=true ./scripts/start-system-interactive.sh
 ###############################################################################
 
 # Importar configurações
 source "$(dirname "$0")/config.sh"
+
+# Configurar flags de tracing
+TRACE_OPTS=""
+if [[ "$TRACE_ENABLED" == "true" ]]; then
+    TRACE_OPTS="-Dtrace.enabled=true"
+    echo -e "${GREEN}📊 Tracing habilitado${NC}"
+fi
 
 ###############################################################################
 # FASE 1: VERIFICAÇÕES
@@ -92,7 +102,7 @@ tmux set-window-option -g automatic-rename off
 ###############################################################################
 
 echo -e "${GREEN}[1/7]${NC} Iniciando Discovery Service (UDP:4000)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/discovery.log" mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/discovery.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$DISCOVERY_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > /dev/null 2>&1 &
@@ -102,7 +112,7 @@ echo -e "${GREEN}  ✓${NC} Discovery iniciado (PID: $DISCOVERY_PID)"
 sleep $DISCOVERY_DELAY
 
 echo -e "${GREEN}[2/7]${NC} Iniciando IDS (TCP:3002)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/ids.log" mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/ids.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$IDS_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > /dev/null 2>&1 &
@@ -112,7 +122,7 @@ echo -e "${GREEN}  ✓${NC} IDS iniciado (PID: $IDS_PID)"
 sleep $IDS_DELAY
 
 echo -e "${GREEN}[3/7]${NC} Iniciando AuthServer (TCP:4001)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/auth.log" mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/auth.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$AUTH_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > /dev/null 2>&1 &
@@ -122,7 +132,7 @@ echo -e "${GREEN}  ✓${NC} AuthServer iniciado (PID: $AUTH_PID)"
 sleep $AUTH_DELAY
 
 echo -e "${GREEN}[4/7]${NC} Iniciando Edge Server (TCP:5000, IDS:5001)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/edge.log" mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/edge.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$EDGE_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > /dev/null 2>&1 &
@@ -132,7 +142,7 @@ echo -e "${GREEN}  ✓${NC} Edge Server iniciado (PID: $EDGE_PID)"
 sleep $EDGE_DELAY
 
 echo -e "${GREEN}[5/7]${NC} Iniciando Datacenter (TCP:8080, HTTP:9090)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/datacenter.log" mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/datacenter.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$DATACENTER_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > /dev/null 2>&1 &
@@ -142,7 +152,7 @@ echo -e "${GREEN}  ✓${NC} Datacenter iniciado (PID: $DATACENTER_PID)"
 sleep $DATACENTER_DELAY
 
 echo -e "${GREEN}[6/7]${NC} Iniciando ReverseProxy (TCP:3001, 3011, 3021)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/proxy.log" mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/proxy.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$PROXY_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > /dev/null 2>&1 &
@@ -152,7 +162,7 @@ echo -e "${GREEN}  ✓${NC} ReverseProxy iniciado (PID: $PROXY_PID)"
 sleep $PROXY_DELAY
 
 echo -e "${GREEN}[7/7]${NC} Iniciando PacketFilter (TCP:3000, 3010, 3020)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/pfilter.log" mvn -f "$POM_FILE" exec:java \
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/pfilter.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java \
     -Dexec.mainClass="$PFILTER_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
     > /dev/null 2>&1 &
@@ -209,30 +219,42 @@ tmux select-pane -t "$TMUX_SESSION:DMZ.1" -T "🛡️ ReverseProxy (TCP:3001,301
 tmux select-pane -t "$TMUX_SESSION:DMZ.2" -T "🚨 IDS (TCP:3002)"
 
 ###############################################################################
-# JANELA 3: SENSORES (Sensor 001-004)
+# JANELA 3: SENSORES (Sensor 001-002 em trace mode, 001-004 normal)
 ###############################################################################
 
-echo -e "${GREEN}[Sensores]${NC} Iniciando 4 sensores..."
+# Selecionar array de sensores baseado no modo
+if [[ "$TRACE_ENABLED" == "true" ]]; then
+    ACTIVE_SENSORS=("${TRACE_SENSORS[@]}")
+    echo -e "${GREEN}[Sensores]${NC} Iniciando 2 sensores (modo trace)..."
+else
+    ACTIVE_SENSORS=("${SENSORS[@]}")
+    echo -e "${GREEN}[Sensores]${NC} Iniciando 4 sensores..."
+fi
 
 # Criar janela "Sensores"
 tmux new-window -t "$TMUX_SESSION" -n "Sensores"
 
-# Criar layout 2x2: primeiro split horizontal, depois vertical em cada lado
-tmux split-window -h -t "$TMUX_SESSION:Sensores"
-tmux split-window -v -t "$TMUX_SESSION:Sensores.0"
-tmux split-window -v -t "$TMUX_SESSION:Sensores.1"
-
-# Aplicar layout tiled para grid 2x2 perfeito
-tmux select-layout -t "$TMUX_SESSION:Sensores" tiled
+# Layout baseado no numero de sensores
+if [[ "${#ACTIVE_SENSORS[@]}" -eq 2 ]]; then
+    # 2 sensores: split horizontal simples
+    tmux split-window -h -t "$TMUX_SESSION:Sensores"
+    tmux select-layout -t "$TMUX_SESSION:Sensores" even-horizontal
+else
+    # 4 sensores: grid 2x2
+    tmux split-window -h -t "$TMUX_SESSION:Sensores"
+    tmux split-window -v -t "$TMUX_SESSION:Sensores.0"
+    tmux split-window -v -t "$TMUX_SESSION:Sensores.1"
+    tmux select-layout -t "$TMUX_SESSION:Sensores" tiled
+fi
 
 # Iniciar sensores em background e enviar comandos para painéis
 painel_idx=0
-for sensor_config in "${SENSORS[@]}"; do
+for sensor_config in "${ACTIVE_SENSORS[@]}"; do
     IFS='|' read -r sensor_id password <<< "$sensor_config"
     
     sensor_args="$sensor_id $password $DISCOVERY_HOST $DISCOVERY_PORT"
     
-    MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/$sensor_id.log" mvn -f "$POM_FILE" exec:java \
+    MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/$sensor_id.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java \
         -Dexec.mainClass="$SENSOR_CLASS" \
         -Dexec.args="$sensor_args" \
         -Dexec.cleanupDaemonThreads=false \
@@ -249,11 +271,16 @@ for sensor_config in "${SENSORS[@]}"; do
     ((painel_idx++))
 done
 
-# Definir títulos APÓS enviar comandos
-tmux select-pane -t "$TMUX_SESSION:Sensores.0" -T "📡 SENSOR_001"
-tmux select-pane -t "$TMUX_SESSION:Sensores.1" -T "📡 SENSOR_002"
-tmux select-pane -t "$TMUX_SESSION:Sensores.2" -T "📡 SENSOR_003"
-tmux select-pane -t "$TMUX_SESSION:Sensores.3" -T "📡 SENSOR_004"
+# Definir títulos baseado no numero de sensores
+if [[ "${#ACTIVE_SENSORS[@]}" -eq 2 ]]; then
+    tmux select-pane -t "$TMUX_SESSION:Sensores.0" -T "📡 SENSOR_001"
+    tmux select-pane -t "$TMUX_SESSION:Sensores.1" -T "📡 SENSOR_002"
+else
+    tmux select-pane -t "$TMUX_SESSION:Sensores.0" -T "📡 SENSOR_001"
+    tmux select-pane -t "$TMUX_SESSION:Sensores.1" -T "📡 SENSOR_002"
+    tmux select-pane -t "$TMUX_SESSION:Sensores.2" -T "📡 SENSOR_003"
+    tmux select-pane -t "$TMUX_SESSION:Sensores.3" -T "📡 SENSOR_004"
+fi
 
 ###############################################################################
 # JANELA 4: TESTES (MaliciousSensor, ClientApp)
@@ -271,6 +298,41 @@ tmux send-keys -t "$TMUX_SESSION:Testes.1" "mvn -f '$POM_FILE' exec:java -Dexec.
 # Definir títulos APÓS enviar comandos
 tmux select-pane -t "$TMUX_SESSION:Testes.0" -T "⚠️ MaliciousSensor (ENTER para iniciar)"
 tmux select-pane -t "$TMUX_SESSION:Testes.1" -T "👤 ClientApp (ENTER para iniciar)"
+
+###############################################################################
+# JANELA 5: TRACE (TraceCollector + Dashboard) - apenas se TRACE_ENABLED
+###############################################################################
+
+if [[ "$TRACE_ENABLED" == "true" ]]; then
+    echo -e "${GREEN}[Trace]${NC} Iniciando TraceCollector e Dashboard..."
+
+    # Iniciar TraceCollector em background
+    mvn -f "$API_POM_FILE" exec:java \
+        -Dexec.mainClass="$TRACE_COLLECTOR_CLASS" \
+        -Dexec.cleanupDaemonThreads=false \
+        > "$LOG_DIR/trace-collector.log" 2>&1 &
+    TRACE_PID=$!
+    echo "$TRACE_PID" > "$PID_DIR/trace-collector.pid"
+    echo -e "${GREEN}  ✓${NC} TraceCollector iniciado (PID: $TRACE_PID)"
+
+    # Criar janela "Trace"
+    tmux new-window -t "$TMUX_SESSION" -n "Trace"
+
+    # Split em 2 painéis
+    tmux split-window -h -t "$TMUX_SESSION:Trace"
+
+    # Painel 0: Log do TraceCollector
+    tmux send-keys -t "$TMUX_SESSION:Trace.0" "tail -F --retry '$LOG_DIR/trace-collector.log'" C-m
+
+    # Painel 1: Dashboard (npm run dev)
+    tmux send-keys -t "$TMUX_SESSION:Trace.1" "cd '$DASHBOARD_DIR' && npm run dev" C-m
+
+    # Definir títulos
+    tmux select-pane -t "$TMUX_SESSION:Trace.0" -T "📊 TraceCollector (UDP:6000, WS:6001)"
+    tmux select-pane -t "$TMUX_SESSION:Trace.1" -T "🖥️ Dashboard (http://localhost:3333)"
+
+    echo -e "${GREEN}  ✓${NC} Dashboard iniciado em http://localhost:3333"
+fi
 
 ###############################################################################
 # FASE 3: FINALIZAÇÃO
@@ -297,12 +359,15 @@ echo "║    Sensor -> PacketFilter -> ReverseProxy -> Edge              ║"
 echo "║                               ↓                                ║"
 echo "║                              IDS                               ║"
 echo "╠════════════════════════════════════════════════════════════════╣"
-echo "║  Layout: 4 janelas tmux                                        ║"
+echo "║  Layout tmux:                                                  ║"
 echo "║                                                                ║"
 echo "║  Ctrl+B 1  [Interna]:  Discovery | Auth | Edge | Datacenter    ║"
 echo "║  Ctrl+B 2  [DMZ]:      PacketFilter | ReverseProxy | IDS       ║"
 echo "║  Ctrl+B 3  [Sensores]: Sensor 001-004 (grid 2x2)               ║"
 echo "║  Ctrl+B 4  [Testes]:   MaliciousSensor | ClientApp (manual)    ║"
+if [[ "$TRACE_ENABLED" == "true" ]]; then
+echo "║  Ctrl+B 5  [Trace]:    TraceCollector | Dashboard              ║"
+fi
 echo "╠════════════════════════════════════════════════════════════════╣"
 echo "║  Atalhos:                                                      ║"
 echo "║    Ctrl+B <n>        - Ir para janela n                        ║"
@@ -312,6 +377,9 @@ echo "║    Ctrl+B Z          - Zoom no painel atual                    ║"
 echo "║    Ctrl+B D          - Desanexar (processos continuam)         ║"
 echo "╠════════════════════════════════════════════════════════════════╣"
 echo "║  Janela 4: Pressione ENTER para iniciar testes manualmente     ║"
+if [[ "$TRACE_ENABLED" == "true" ]]; then
+echo "║  Dashboard: http://localhost:3333                              ║"
+fi
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 sleep 2

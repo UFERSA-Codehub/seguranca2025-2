@@ -13,6 +13,8 @@ import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
 import com.project.network.SecureTCPChannel;
 import com.project.server.firewall.ContentInspector.InspectionResult;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 
 public class ProxyHandler implements Runnable {
     private static final Logger logger = LoggerFactory.getLogger("Firewall.ProxyHandler");
@@ -88,6 +90,20 @@ public class ProxyHandler implements Runnable {
         String clientId = session.getClientId();
         String serverId = session.getServerId();
 
+        clientChannel.setTracePeerId("PACKET_FILTER");
+        serverChannel.setTracePeerId(serviceName);
+
+        TracerFactory.getTracer().trace(TraceEvent.create(
+            "REVERSE_PROXY",
+            "TCP",
+            "RECEIVE",
+            clientIp + ":" + clientPort,
+            "SESSION",
+            null,
+            null,
+            "PACKET_FILTER"
+        ));
+
         while (running && !clientSocket.isClosed() && !serverChannel.getSocket().isClosed()) {
             try {
                 // Receber mensagem do cliente
@@ -130,6 +146,16 @@ public class ProxyHandler implements Runnable {
                 // Re-encriptar e enviar ao servidor interno
                 MessageTCP serverMessage = reencryptForServer(serverChannel, serverId, clientMessage, clientId, sessionKeyManager);
                 if (serverMessage != null) {
+                    TracerFactory.getTracer().trace(TraceEvent.create(
+                        "REVERSE_PROXY",
+                        "TCP",
+                        "SEND",
+                        targetHost + ":" + targetPort,
+                        messageType != null ? messageType.name() : "ENVELOPE",
+                        serverMessage.getEncryptedPayload(),
+                        null,
+                        serviceName
+                    ));
                     serverChannel.send(serverMessage);
                 }
 
@@ -140,11 +166,32 @@ public class ProxyHandler implements Runnable {
                     break;
                 }
 
+                TracerFactory.getTracer().trace(TraceEvent.create(
+                    "REVERSE_PROXY",
+                    "TCP",
+                    "RECEIVE",
+                    targetHost + ":" + targetPort,
+                    serverResponse.getType() != null ? serverResponse.getType().name() : "ENVELOPE",
+                    serverResponse.getEncryptedPayload(),
+                    null,
+                    serviceName
+                ));
+
                 // Verificar resposta do servidor
                 if (serverChannel.verify(serverResponse)) {
                     // Re-encriptar e enviar ao cliente
                     MessageTCP clientResponse = reencryptForClient(clientChannel, clientId, serverResponse, serverId, sessionKeyManager);
                     if (clientResponse != null) {
+                        TracerFactory.getTracer().trace(TraceEvent.create(
+                            "REVERSE_PROXY",
+                            "TCP",
+                            "SEND",
+                            clientIp + ":" + clientPort,
+                            serverResponse.getType() != null ? serverResponse.getType().name() : "ENVELOPE",
+                            clientResponse.getEncryptedPayload(),
+                            null,
+                            "PACKET_FILTER"
+                        ));
                         clientChannel.send(clientResponse);
                     }
                 }

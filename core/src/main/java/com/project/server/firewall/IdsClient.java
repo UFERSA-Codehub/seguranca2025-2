@@ -12,6 +12,8 @@ import com.project.crypto.KeyManager;
 import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
 import com.project.network.SecureTCPChannel;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 
 public class IdsClient {
     private static final Logger logger = LoggerFactory.getLogger("Firewall.IdsClient");
@@ -93,6 +95,17 @@ public class IdsClient {
             if (alertMsg != null) {
                 channel.send(alertMsg);
                 logger.info("Alerta [{}] enviado ao IDS: {} -> {}", alertType, sourceIp, destService);
+
+                TracerFactory.getTracer().trace(TraceEvent.create(
+                    firewallId,
+                    "TCP",
+                    "SEND",
+                    idsHost + ":" + idsPort,
+                    "ALERT",
+                    null,
+                    payload.toString(),
+                    "IDS"
+                ));
 
                 // Aguardar ACK (com timeout curto)
                 socket.setSoTimeout(2000);

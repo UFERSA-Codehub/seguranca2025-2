@@ -13,6 +13,8 @@ import com.project.crypto.AES;
 import com.project.crypto.KeyManager;
 import com.project.message.http.MessageHTTP;
 import com.project.message.http.MessageTypeHTTP;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 
 public class SecureHTTPHelper {
     private static final Logger logger = LoggerFactory.getLogger("Network.HTTPHelper");
@@ -55,8 +57,18 @@ public class SecureHTTPHelper {
             AES aes = new AES(aesKey);
 
             String encryptedPayload = aes.encrypt(payload);
-            // Assinar ciphertext
             String signature = keyManager.signBase64(encryptedPayload.getBytes());
+
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                serverId,
+                "HTTP",
+                "SEND",
+                clientId,
+                type != null ? type.name() : "RESPONSE",
+                encryptedPayload,
+                payload,
+                clientId
+            ));
 
             return MessageHTTP.builder()
                     .type(type)
@@ -122,7 +134,20 @@ public class SecureHTTPHelper {
     public String decrypt(String clientId, MessageHTTP request) {
         try {
             AES aes = new AES(keyManager.getPeerAESKey(clientId));
-            return aes.decrypt(request.getEncryptedPayload());
+            String decrypted = aes.decrypt(request.getEncryptedPayload());
+            
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                serverId,
+                "HTTP",
+                "DECRYPT",
+                clientId,
+                request.getType() != null ? request.getType().name() : "REQUEST",
+                request.getEncryptedPayload(),
+                decrypted,
+                clientId
+            ));
+            
+            return decrypted;
         } catch (GeneralSecurityException e) {
             logger.error("Erro ao decifrar mensagem de '{}': {}", clientId, e.getMessage());
             return null;

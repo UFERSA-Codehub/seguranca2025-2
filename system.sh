@@ -7,12 +7,18 @@
 #   ./system.sh                  - Modo daemon (todos em background)
 #   ./system.sh --interactive    - Modo interativo (Discovery/Datacenter com comandos)
 #   ./system.sh -i               - Atalho para --interactive
+#   ./system.sh --trace          - Modo interativo com tracing + dashboard
+#   ./system.sh -t               - Atalho para --trace
 ###############################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Verificar argumentos
-if [[ "$1" == "--interactive" ]] || [[ "$1" == "-i" ]]; then
+if [[ "$1" == "--trace" ]] || [[ "$1" == "-t" ]]; then
+    echo "📊 Modo Trace selecionado (com dashboard)"
+    export TRACE_ENABLED=true
+    exec "$SCRIPT_DIR/scripts/start-system-interactive.sh" "${@:2}"
+elif [[ "$1" == "--interactive" ]] || [[ "$1" == "-i" ]]; then
     echo "🎮 Modo Interativo selecionado"
     exec "$SCRIPT_DIR/scripts/start-system-interactive.sh" "${@:2}"
 else

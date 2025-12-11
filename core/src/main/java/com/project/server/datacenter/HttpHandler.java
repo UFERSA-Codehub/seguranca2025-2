@@ -20,6 +20,8 @@ import com.project.network.SecureHTTPHelper;
 import com.project.server.auth.ServerAuth;
 import com.project.server.datacenter.db.DataStore;
 import com.project.server.datacenter.db.ReportService;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
@@ -314,7 +316,23 @@ public class HttpHandler {
     // ==================== HELPERS ====================
 
     private String readRequestBody(HttpExchange exchange) throws IOException {
-        return new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        String remoteAddress = exchange.getRemoteAddress() != null 
+            ? exchange.getRemoteAddress().toString() 
+            : "unknown";
+        
+        TracerFactory.getTracer().trace(TraceEvent.create(
+            "DATACENTER",
+            "HTTP",
+            "RECEIVE",
+            remoteAddress,
+            exchange.getRequestURI().getPath(),
+            body,
+            null,
+            null
+        ));
+        
+        return body;
     }
 
     private void sendError(HttpExchange exchange, String clientId, String reason, int statusCode) throws IOException {
@@ -346,6 +364,21 @@ public class HttpHandler {
     }
 
     private void sendJsonResponse(HttpExchange exchange, int statusCode, String json) throws IOException {
+        String remoteAddress = exchange.getRemoteAddress() != null 
+            ? exchange.getRemoteAddress().toString() 
+            : "unknown";
+        
+        TracerFactory.getTracer().trace(TraceEvent.create(
+            "DATACENTER",
+            "HTTP",
+            "SEND",
+            remoteAddress,
+            exchange.getRequestURI().getPath() + " [" + statusCode + "]",
+            json,
+            null,
+            null
+        ));
+        
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(statusCode, bytes.length);

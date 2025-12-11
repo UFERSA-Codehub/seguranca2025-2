@@ -20,6 +20,8 @@ import com.project.crypto.KeyManager;
 import com.project.message.tcp.EnvelopeTCP;
 import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 
 public class SecureTCPChannel {
     private static final Logger logger = LoggerFactory.getLogger("Network.TCPChannel");
@@ -28,6 +30,7 @@ public class SecureTCPChannel {
     private final Socket socket;
     private final BufferedReader reader;
     private final PrintWriter writer;
+    private String tracePeerId;
 
     public SecureTCPChannel(String entityId, KeyManager keyManager, Socket socket) throws IOException {
         this.entityId = entityId;
@@ -35,6 +38,11 @@ public class SecureTCPChannel {
         this.socket = socket;
         this.reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         this.writer = new PrintWriter(socket.getOutputStream(), true);
+        this.tracePeerId = null;
+    }
+
+    public void setTracePeerId(String peerId) {
+        this.tracePeerId = peerId;
     }
 
     // ==================== ENVIO ====================
@@ -44,6 +52,17 @@ public class SecureTCPChannel {
             String json = message.toJson();
             writer.println(json);
             logger.debug("Mensagem {} enviada", message.getType());
+            
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                entityId,
+                "TCP",
+                "SEND",
+                socket.getRemoteSocketAddress() != null ? socket.getRemoteSocketAddress().toString() : "unknown",
+                message.getType() != null ? message.getType().name() : "ENVELOPE",
+                message.getEncryptedPayload(),
+                null,
+                tracePeerId
+            ));
         } catch (Exception e) {
             logger.error("Erro ao enviar mensagem: {}", e.getMessage());
         }
@@ -60,6 +79,22 @@ public class SecureTCPChannel {
             }
             MessageTCP message = MessageTCP.fromJson(json);
             logger.debug("Mensagem {} recebida de {}", message.getType(), message.getSenderId());
+            
+            // Traçar apenas mensagens não cifradas (HELLO, CHALLENGE)
+            // Mensagens cifradas serão traçadas após a decifragem
+            if (message.getEncryptedPayload() == null) {
+                TracerFactory.getTracer().trace(TraceEvent.create(
+                    entityId,
+                    "TCP",
+                    "RECEIVE",
+                    socket.getRemoteSocketAddress() != null ? socket.getRemoteSocketAddress().toString() : "unknown",
+                    message.getType() != null ? message.getType().name() : "UNKNOWN",
+                    null,
+                    null,
+                    message.getSenderId()
+                ));
+            }
+            
             return message;
         } catch (SocketTimeoutException e) {
             logger.warn("Timeout aguardando mensagem");
@@ -135,7 +170,20 @@ public class SecureTCPChannel {
     public String decrypt(String peerId, MessageTCP message) {
         try {
             AES aes = new AES(keyManager.getPeerAESKey(peerId));
-            return aes.decrypt(message.getEncryptedPayload());
+            String decrypted = aes.decrypt(message.getEncryptedPayload());
+            
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                entityId,
+                "TCP",
+                "RECEIVE",
+                socket.getRemoteSocketAddress() != null ? socket.getRemoteSocketAddress().toString() : "unknown",
+                message.getType() != null ? message.getType().name() : "PAYLOAD",
+                message.getEncryptedPayload(),
+                decrypted,
+                peerId
+            ));
+            
+            return decrypted;
         } catch (GeneralSecurityException e) {
             logger.error("Erro ao decifrar mensagem de '{}': {}", peerId, e.getMessage());
             return null;
@@ -191,7 +239,20 @@ public class SecureTCPChannel {
         try {
             AES aes = new AES(keyManager.getPeerAESKey(peerId));
             String envelopeJson = aes.decrypt(message.getEncryptedPayload());
-            return EnvelopeTCP.fromJson(envelopeJson);
+            EnvelopeTCP envelope = EnvelopeTCP.fromJson(envelopeJson);
+            
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                entityId,
+                "TCP",
+                "RECEIVE",
+                socket.getRemoteSocketAddress() != null ? socket.getRemoteSocketAddress().toString() : "unknown",
+                envelope.getType() != null ? envelope.getType().name() : "ENVELOPE",
+                message.getEncryptedPayload(),
+                envelopeJson,
+                peerId
+            ));
+            
+            return envelope;
         } catch (GeneralSecurityException e) {
             logger.error("Erro ao decifrar envelope de '{}': {}", peerId, e.getMessage());
             return null;
