@@ -38,7 +38,7 @@ public class IdsClient {
             return true;
         }
 
-        logger.debug("Conectando ao IDS em {}:{}...", idsHost, idsPort);
+        logger.info("Conectando ao IDS em {}:{}...", idsHost, idsPort);
 
         try {
             socket = new Socket(idsHost, idsPort);
@@ -65,7 +65,7 @@ public class IdsClient {
             }
 
             connected = true;
-            logger.debug("Conectado ao IDS com sucesso");
+            logger.info("Conectado ao IDS com sucesso");
             return true;
 
         } catch (IOException e) {
@@ -110,7 +110,7 @@ public class IdsClient {
                 socket.setSoTimeout(2000);
                 MessageTCP ack = channel.receive();
                 if (ack != null) {
-                    logger.debug("ACK recebido do IDS");
+                    logger.info("ACK recebido do IDS");
                 }
                 socket.setSoTimeout(10000);
             }

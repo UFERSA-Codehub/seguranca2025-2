@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import com.project.auth.JWT;
 import com.project.crypto.KeyManager;
 import com.project.network.SecureUDPChannel;
+import com.project.server.ConnectionGuard;
 import com.project.server.IServer;
 import com.project.server.auth.ServerAuth;
 import com.project.server.edge.data.Cache;
@@ -43,6 +44,8 @@ public class ServerEdge implements IServer {
     private ExecutorService idsThreadPool;
     private JWT jwt;
     private Cache cache;
+    private ConnectionGuard connectionGuard;
+    private ConnectionGuard idsConnectionGuard;
     
     // Registro de conexões ativas por IP (para TERMINATE do IDS)
     private final Map<String, SensorTcpHandler> activeConnections = new ConcurrentHashMap<>();
@@ -87,6 +90,10 @@ public class ServerEdge implements IServer {
             this.jwt = new JWT(ServerAuth.JWT_SECRET, "AuthServer");
             this.cache = new Cache();
             this.scheduler = Executors.newScheduledThreadPool(2);
+            // ConnectionGuard: apenas ReverseProxy (localhost) pode conectar para dados de sensores
+            this.connectionGuard = new ConnectionGuard(name + "-Sensors");
+            // IDS pode conectar de localhost
+            this.idsConnectionGuard = new ConnectionGuard(name + "-IDS");
             this.running = true;
         } catch (NoSuchAlgorithmException e) {
             logger.error("Erro ao inicializar KeyManager: {}", e.getMessage());
@@ -143,6 +150,13 @@ public class ServerEdge implements IServer {
         while (running) {
             try {
                 Socket clientSocket = tcpServerSocket.accept();
+                
+                // Verificar se IP está na whitelist (apenas ReverseProxy e localhost)
+                if (!connectionGuard.isConnectionAllowed(clientSocket)) {
+                    clientSocket.close();
+                    continue;
+                }
+                
                 String clientIp = extractIp(clientSocket);
                 logger.info("Nova conexão de sensor: {}", clientSocket.getRemoteSocketAddress());
                 SensorTcpHandler handler = new SensorTcpHandler(clientSocket, keyManager, jwt, cache, this);
@@ -162,6 +176,13 @@ public class ServerEdge implements IServer {
             while (running) {
                 try {
                     Socket idsSocket = idsServerSocket.accept();
+                    
+                    // Verificar se IP está na whitelist (apenas IDS de localhost)
+                    if (!idsConnectionGuard.isConnectionAllowed(idsSocket)) {
+                        idsSocket.close();
+                        continue;
+                    }
+                    
                     logger.info("Conexão do IDS recebida: {}", idsSocket.getRemoteSocketAddress());
                     idsThreadPool.submit(new IdsCommandHandler(idsSocket, keyManager, this));
                 } catch (IOException e) {
@@ -426,7 +447,7 @@ public class ServerEdge implements IServer {
     public static void main(String[] args) {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 5000;
         String discoveryHost = args.length > 1 ? args[1] : "localhost";
-        int discoveryPort = args.length > 2 ? Integer.parseInt(args[2]) : 4000;
+        int discoveryPort = args.length > 2 ? Integer.parseInt(args[2]) : 3041;
         
         ServerEdge server = new ServerEdge(port, discoveryHost, discoveryPort);
         Runtime.getRuntime().addShutdownHook(new Thread(server::stop));

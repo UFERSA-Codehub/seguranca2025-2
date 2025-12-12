@@ -60,7 +60,7 @@ public class ProxySession {
             }
             clientId = clientHello.getSenderId();
             proxySessionId = "RP-" + clientId;
-            logger.debug("Recebido HELLO de {} (sessao: {})", clientId, proxySessionId);
+            logger.info("Recebido HELLO de {} (sessao: {})", clientId, proxySessionId);
 
             // Passo 3 - Responder CHALLENGE ao cliente (impersonando o servico)
             MessageTCP challengeToClient = clientChannel.handleHello(clientHello);
@@ -69,7 +69,7 @@ public class ProxySession {
                 return false;
             }
             clientChannel.send(challengeToClient);
-            logger.debug("CHALLENGE enviado para {} (como {})", clientId, serviceName.toUpperCase());
+            logger.info("CHALLENGE enviado para {} (como {})", clientId, serviceName.toUpperCase());
 
             // Passo 4 - Criar canal com servidor interno
             // Usar proxySessionId (RP-<clientId>) para identificar unicamente esta sessao
@@ -82,7 +82,7 @@ public class ProxySession {
             // Passo 5 - Enviar HELLO ao servidor (proxy atua como cliente)
             MessageTCP helloToServer = serverChannel.buildHello();
             serverChannel.send(helloToServer);
-            logger.debug("HELLO enviado para {}", serviceName);
+            logger.info("HELLO enviado para {}", serviceName);
 
             // Passo 6 - Receber CHALLENGE do servidor
             MessageTCP serverChallenge = serverChannel.receive();
@@ -98,7 +98,7 @@ public class ProxySession {
                 logger.error("Falha ao processar CHALLENGE do servidor");
                 return false;
             }
-            logger.debug("Sessao estabelecida com {}", serverId);
+            logger.info("Sessao estabelecida com {}", serverId);
 
             established = true;
             logger.info("ProxySession estabelecida: {} <-> Proxy ({}) <-> {}", clientId, serviceName, serverId);

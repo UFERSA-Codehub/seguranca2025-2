@@ -23,11 +23,13 @@ public class ServerIDS implements IServer {
     private static final Logger logger = LoggerFactory.getLogger("IDS");
 
     private static final int DEFAULT_PORT = 3002;
-    private static final int EDGE_COMMAND_PORT = 5001;
-    private static final String EDGE_HOST = "localhost";
+    private static final int DEFAULT_EDGE_COMMAND_PORT = 5001;
+    private static final String DEFAULT_EDGE_HOST = "localhost";
 
     private final String name;
     private final int port;
+    private final String edgeHost;
+    private final int edgeCommandPort;
     
     private volatile boolean running;
     private KeyManager keyManager;
@@ -41,8 +43,14 @@ public class ServerIDS implements IServer {
     private volatile boolean edgeConnected;
 
     public ServerIDS(int port) {
+        this(port, DEFAULT_EDGE_HOST, DEFAULT_EDGE_COMMAND_PORT);
+    }
+
+    public ServerIDS(int port, String edgeHost, int edgeCommandPort) {
         this.name = "IDS";
         this.port = port;
+        this.edgeHost = edgeHost;
+        this.edgeCommandPort = edgeCommandPort;
         this.running = false;
         this.edgeConnected = false;
     }
@@ -66,7 +74,7 @@ public class ServerIDS implements IServer {
             return;
         }
 
-        logger.info("[IDS] Iniciado na porta {} (TCP)", port);
+        logger.info("[IDS] Iniciado na porta {} (TCP) - Edge: {}:{}", port, edgeHost, edgeCommandPort);
 
         while (running) {
             try {
@@ -123,10 +131,10 @@ public class ServerIDS implements IServer {
             return true;
         }
 
-        logger.debug("Conectando ao Edge em {}:{}...", EDGE_HOST, EDGE_COMMAND_PORT);
+        logger.info("Conectando ao Edge em {}:{}...", edgeHost, edgeCommandPort);
 
         try {
-            edgeSocket = new Socket(EDGE_HOST, EDGE_COMMAND_PORT);
+            edgeSocket = new Socket(edgeHost, edgeCommandPort);
             edgeSocket.setSoTimeout(10000);
             edgeChannel = new SecureTCPChannel("IDS", keyManager, edgeSocket);
             // Definir tracePeerId antes de qualquer send/receive para rastreamento correto
@@ -151,7 +159,7 @@ public class ServerIDS implements IServer {
             }
 
             edgeConnected = true;
-            logger.debug("Conectado ao Edge com sucesso");
+            logger.info("Conectado ao Edge com sucesso");
             return true;
 
         } catch (IOException e) {
@@ -247,8 +255,10 @@ public class ServerIDS implements IServer {
 
     public static void main(String[] args) {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
+        String edgeHost = args.length > 1 ? args[1] : DEFAULT_EDGE_HOST;
+        int edgeCommandPort = args.length > 2 ? Integer.parseInt(args[2]) : DEFAULT_EDGE_COMMAND_PORT;
 
-        ServerIDS server = new ServerIDS(port);
+        ServerIDS server = new ServerIDS(port, edgeHost, edgeCommandPort);
         Runtime.getRuntime().addShutdownHook(new Thread(server::stop));
         server.start();
     }

@@ -56,9 +56,15 @@ declare -a SENSORS=(
     "SENSOR_004|senha321"
 )
 
-# Discovery Server
+# Discovery Server (internal port - used by internal servers via ReverseProxy)
 DISCOVERY_HOST="localhost"
 DISCOVERY_PORT="4000"
+
+# Discovery via PacketFilter (external port - used by sensors and clients)
+DISCOVERY_PF_PORT="3040"
+
+# Discovery via ReverseProxy (internal port - used by internal services)
+DISCOVERY_RP_PORT="3041"
 
 # Sessao tmux
 TMUX_SESSION="system-monitor"

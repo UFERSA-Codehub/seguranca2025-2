@@ -51,7 +51,7 @@ fi
 # LIMPAR PORTAS EM USO (processos orfaos de execucoes anteriores)
 ###############################################################################
 
-PORTS_TO_CHECK=(3000 3001 3002 3005 3010 3011 3020 3021 3030 3031 4000 4001 5000 5001 6000 6001 8080 9090)
+PORTS_TO_CHECK=(3000 3001 3002 3005 3010 3011 3020 3021 3030 3031 3040 3041 4000 4001 5000 5001 6000 6001 8080 9090)
 hanging_pids=()
 
 for port in "${PORTS_TO_CHECK[@]}"; do
@@ -193,7 +193,7 @@ echo "$DATACENTER_PID" > "$PID_DIR/datacenter.pid"
 echo -e "${GREEN}  ✓${NC} Datacenter iniciado (PID: $DATACENTER_PID)"
 sleep $DATACENTER_DELAY
 
-echo -e "${GREEN}[6/7]${NC} Iniciando ReverseProxy (TCP:3001, 3011, 3021)..."
+echo -e "${GREEN}[6/7]${NC} Iniciando ReverseProxy (TCP:3001-3031, UDP:3041)..."
 MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/proxy.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
     -Dexec.mainClass="$PROXY_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
@@ -203,7 +203,7 @@ echo "$PROXY_PID" > "$PID_DIR/proxy.pid"
 echo -e "${GREEN}  ✓${NC} ReverseProxy iniciado (PID: $PROXY_PID)"
 sleep $PROXY_DELAY
 
-echo -e "${GREEN}[7/7]${NC} Iniciando PacketFilter (TCP:3000, 3010, 3020)..."
+echo -e "${GREEN}[7/7]${NC} Iniciando PacketFilter (TCP:3000-3030, UDP:3040)..."
 MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/pfilter.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
     -Dexec.mainClass="$PFILTER_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
@@ -256,8 +256,8 @@ tmux send-keys -t "$TMUX_SESSION:DMZ.1" "tail -F --retry '$LOG_DIR/proxy.log'" C
 tmux send-keys -t "$TMUX_SESSION:DMZ.2" "tail -F --retry '$LOG_DIR/ids.log'" C-m
 
 # Definir títulos APÓS enviar comandos
-tmux select-pane -t "$TMUX_SESSION:DMZ.0" -T "🔥 PacketFilter (TCP:3000,3010,3020)"
-tmux select-pane -t "$TMUX_SESSION:DMZ.1" -T "🛡️ ReverseProxy (TCP:3001,3011,3021)"
+tmux select-pane -t "$TMUX_SESSION:DMZ.0" -T "🔥 PacketFilter (TCP:3000-3030, UDP:3040)"
+tmux select-pane -t "$TMUX_SESSION:DMZ.1" -T "🛡️ ReverseProxy (TCP:3001-3031, UDP:3041)"
 tmux select-pane -t "$TMUX_SESSION:DMZ.2" -T "🚨 IDS (TCP:3002)"
 
 ###############################################################################
@@ -280,7 +280,7 @@ painel_idx=0
 for sensor_config in "${SENSORS[@]}"; do
     IFS='|' read -r sensor_id password <<< "$sensor_config"
     
-    sensor_args="$sensor_id $password $DISCOVERY_HOST $DISCOVERY_PORT"
+    sensor_args="$sensor_id $password $DISCOVERY_HOST $DISCOVERY_PF_PORT"
     
     MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/$sensor_id.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
         -Dexec.mainClass="$SENSOR_CLASS" \
@@ -310,8 +310,8 @@ tmux new-window -t "$TMUX_SESSION" -n "Testes"
 tmux split-window -h -t "$TMUX_SESSION:Testes"
 
 # Enviar comandos para cada painel (preparados, nao executam)
-tmux send-keys -t "$TMUX_SESSION:Testes.0" "MAVEN_OPTS='$TRACE_OPTS' mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$MALICIOUS_SENSOR_CLASS' -Dexec.args='--mode ANOMALY_DATA --password sensor123'"
-tmux send-keys -t "$TMUX_SESSION:Testes.1" "MAVEN_OPTS='$TRACE_OPTS' mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$CLIENT_APP_CLASS'"
+tmux send-keys -t "$TMUX_SESSION:Testes.0" "MAVEN_OPTS='$TRACE_OPTS' mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$MALICIOUS_SENSOR_CLASS' -Dexec.args='--mode ANOMALY_DATA --password sensor123 --host $DISCOVERY_HOST --port $DISCOVERY_PF_PORT'"
+tmux send-keys -t "$TMUX_SESSION:Testes.1" "MAVEN_OPTS='$TRACE_OPTS' mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$CLIENT_APP_CLASS' -Dexec.args='CLI_CLIENT $DISCOVERY_HOST $DISCOVERY_PF_PORT'"
 
 # Definir títulos APÓS enviar comandos
 tmux select-pane -t "$TMUX_SESSION:Testes.0" -T "⚠️ MaliciousSensor (ENTER para iniciar)"
@@ -405,7 +405,7 @@ fi
 wait 2>/dev/null
 
 # Double check: verificar se algum processo ainda esta usando as portas
-PORTS_TO_CHECK=(3000 3001 3002 3005 3010 3011 3020 3021 3030 3031 4000 4001 5000 5001 6000 6001 8080 9090)
+PORTS_TO_CHECK=(3000 3001 3002 3005 3010 3011 3020 3021 3030 3031 3040 3041 4000 4001 5000 5001 6000 6001 8080 9090)
 hanging_pids=()
 
 for port in "${PORTS_TO_CHECK[@]}"; do

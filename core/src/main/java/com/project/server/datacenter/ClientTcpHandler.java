@@ -20,6 +20,7 @@ import com.project.message.tcp.EnvelopeTCP;
 import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
 import com.project.network.SecureTCPChannel;
+import com.project.server.ConnectionGuard;
 import com.project.server.datacenter.db.DataStore;
 import com.project.server.datacenter.db.DataStore.SensorReading;
 import com.project.server.datacenter.db.ReportService;
@@ -45,6 +46,7 @@ public class ClientTcpHandler implements Runnable {
     private final ExecutorService executor;
     private final KeyManager keyManager;
     private final JWT jwt;
+    private final ConnectionGuard connectionGuard;
     
     private ServerSocket serverSocket;
     private volatile boolean running;
@@ -57,6 +59,8 @@ public class ClientTcpHandler implements Runnable {
         this.executor = executor;
         this.keyManager = keyManager;
         this.jwt = jwt;
+        // Apenas clientes via ReverseProxy (localhost) podem conectar
+        this.connectionGuard = new ConnectionGuard("Datacenter.ClientTcpHandler");
         this.running = false;
     }
 
@@ -70,6 +74,13 @@ public class ClientTcpHandler implements Runnable {
             while (running) {
                 try {
                     Socket clientSocket = serverSocket.accept();
+                    
+                    // Verificar se IP está na whitelist (apenas clientes via ReverseProxy/localhost)
+                    if (!connectionGuard.isConnectionAllowed(clientSocket)) {
+                        clientSocket.close();
+                        continue;
+                    }
+                    
                     logger.info("Conexão de cliente CLI recebida de {}:{}", 
                             clientSocket.getInetAddress().getHostAddress(), 
                             clientSocket.getPort());

@@ -192,7 +192,7 @@ public class ServerDatacenter implements IServer {
         int tcpPort = args.length > 0 ? Integer.parseInt(args[0]) : 8080;
         int clientTcpPort = args.length > 1 ? Integer.parseInt(args[1]) : 9090;
         String discoveryHost = args.length > 2 ? args[2] : "localhost";
-        int discoveryPort = args.length > 3 ? Integer.parseInt(args[3]) : 4000;
+        int discoveryPort = args.length > 3 ? Integer.parseInt(args[3]) : 3041;
 
         ServerDatacenter server = new ServerDatacenter(tcpPort, clientTcpPort, discoveryHost, discoveryPort);
         Runtime.getRuntime().addShutdownHook(new Thread(server::stop));

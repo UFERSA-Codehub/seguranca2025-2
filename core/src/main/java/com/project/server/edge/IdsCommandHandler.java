@@ -32,7 +32,7 @@ public class IdsCommandHandler implements Runnable {
     @Override
     public void run() {
         String clientId = idsSocket.getRemoteSocketAddress().toString();
-        logger.debug("Handler IDS iniciado para: {}", clientId);
+        logger.info("Handler IDS iniciado para: {}", clientId);
 
         try {
             SecureTCPChannel channel = new SecureTCPChannel("EDGE", keyManager, idsSocket);
@@ -53,12 +53,12 @@ public class IdsCommandHandler implements Runnable {
                 return;
             }
             channel.send(challenge);
-            logger.debug("Handshake com IDS concluído ({})", peerId);
+            logger.info("Handshake com IDS concluído ({})", peerId);
 
             while (!idsSocket.isClosed()) {
                 MessageTCP message = channel.receive();
                 if (message == null) {
-                    logger.debug("Conexão IDS fechada");
+                    logger.info("Conexão IDS fechada");
                     break;
                 }
 

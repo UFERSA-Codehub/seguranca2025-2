@@ -28,7 +28,8 @@ public class RuleEngine {
         new FilterRule(3010, true, "Edge (sensores)"),
         new FilterRule(3020, true, "Datacenter (Edge batches)"),
         new FilterRule(3030, true, "Datacenter (CLI client)"),
-        new FilterRule(-1, false, "Negar tudo - politica default deny")                 // REGRA DEFAULT - deve ser a ultima
+        new FilterRule(3040, true, "Discovery (UDP)"),
+        new FilterRule(-1, false, "Negar tudo - politica default deny")
     );
 
     private final Set<String> blacklist;

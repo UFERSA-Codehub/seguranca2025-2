@@ -18,6 +18,7 @@ import com.project.message.tcp.EnvelopeTCP;
 import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
 import com.project.network.SecureTCPChannel;
+import com.project.server.ConnectionGuard;
 import com.project.server.datacenter.db.DataStore;
 
 public class TcpHandler implements Runnable {
@@ -31,6 +32,7 @@ public class TcpHandler implements Runnable {
     private final DataStore dataStore;
     private final ExecutorService executor;
     private final KeyManager keyManager;
+    private final ConnectionGuard connectionGuard;
     private ServerSocket serverSocket;
     private volatile boolean running;
 
@@ -39,6 +41,8 @@ public class TcpHandler implements Runnable {
         this.dataStore = dataStore;
         this.executor = executor;
         this.keyManager = keyManager;
+        // Apenas Edge (via ReverseProxy/localhost) pode conectar
+        this.connectionGuard = new ConnectionGuard("Datacenter.TcpHandler");
         this.running = false;
     }
 
@@ -52,6 +56,13 @@ public class TcpHandler implements Runnable {
             while (running) {
                 try {
                     Socket clientSocket = serverSocket.accept();
+                    
+                    // Verificar se IP está na whitelist (apenas Edge via localhost)
+                    if (!connectionGuard.isConnectionAllowed(clientSocket)) {
+                        clientSocket.close();
+                        continue;
+                    }
+                    
                     logger.info("Conexão recebida de {}:{}", 
                             clientSocket.getInetAddress().getHostAddress(), 
                             clientSocket.getPort());

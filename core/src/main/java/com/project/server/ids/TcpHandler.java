@@ -61,13 +61,13 @@ public class TcpHandler implements Runnable {
                 return;
             }
             channel.send(challenge);
-            logger.debug("Handshake concluído com {}", peerId);
+            logger.info("Handshake concluído com {}", peerId);
 
             // Loop de recebimento de alertas
             while (!clientSocket.isClosed()) {
                 MessageTCP message = channel.receive();
                 if (message == null) {
-                    logger.debug("Conexao fechada por {}", peerId);
+                    logger.info("Conexao fechada por {}", peerId);
                     break;
                 }
 
