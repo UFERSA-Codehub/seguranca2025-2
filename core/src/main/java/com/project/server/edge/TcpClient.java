@@ -49,6 +49,7 @@ public class TcpClient {
             Socket socket = new Socket(datacenterHost, datacenterPort);
             KeyManager keyManager = new KeyManager();
             this.channel = new SecureTCPChannel(edgeId, keyManager, socket);
+            channel.setTracePeerId("DATACENTER");
 
             // Passo 1 - Enviar HELLO
             channel.send(channel.buildHello());

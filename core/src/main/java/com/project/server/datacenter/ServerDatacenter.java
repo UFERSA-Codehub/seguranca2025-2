@@ -9,9 +9,11 @@ import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.project.auth.JWT;
 import com.project.crypto.KeyManager;
 import com.project.network.SecureUDPChannel;
 import com.project.server.IServer;
+import com.project.server.auth.ServerAuth;
 import com.project.server.datacenter.db.DataStore;
 import com.project.server.datacenter.db.ReportService;
 
@@ -19,8 +21,8 @@ public class ServerDatacenter implements IServer {
     private static final Logger logger = LoggerFactory.getLogger("Datacenter");
 
     private final String name;
-    private final int tcpPort;
-    private final int httpPort;
+    private final int tcpPort;          // Porta para conexões do Edge (8080)
+    private final int clientTcpPort;    // Porta para conexões do CLI client (9090)
     private final String discoveryHost;
     private final int discoveryPort;
 
@@ -35,15 +37,15 @@ public class ServerDatacenter implements IServer {
     private UdpHandler udpHandler;
     private DataStore dataStore;
     private ReportService reportService;
-    private TcpHandler tcpHandler;
-    private HttpHandler httpHandler;
-    private BrowserHttpHandler browserHandler;
+    private TcpHandler tcpHandler;              // Edge connections
+    private ClientTcpHandler clientTcpHandler;  // CLI client connections
+    private BrowserHttpHandler browserHandler;  // Browser HTTP access
     private AuthClient authClient;
 
-    public ServerDatacenter(int tcpPort, int httpPort, String discoveryHost, int discoveryPort) {
+    public ServerDatacenter(int tcpPort, int clientTcpPort, String discoveryHost, int discoveryPort) {
         this.name = "DATACENTER";
         this.tcpPort = tcpPort;
-        this.httpPort = httpPort;
+        this.clientTcpPort = clientTcpPort;
         this.discoveryHost = discoveryHost;
         this.discoveryPort = discoveryPort;
         this.running = false;
@@ -52,7 +54,7 @@ public class ServerDatacenter implements IServer {
 
     @Override
     public void start() {
-        logger.info("[Datacenter] Iniciando na porta TCP:{} e HTTP:{}...", tcpPort, httpPort);
+        logger.info("[Datacenter] Iniciando na porta TCP:{} e ClientTCP:{}...", tcpPort, clientTcpPort);
 
         try {
             this.keyManager = new KeyManager();
@@ -75,7 +77,7 @@ public class ServerDatacenter implements IServer {
             return;
         }
 
-        if (!udpClient.register(tcpPort, httpPort)) {
+        if (!udpClient.register(tcpPort, clientTcpPort)) {
             logger.error("Falha no registro com Discovery. Encerrando.");
             return;
         }
@@ -87,24 +89,26 @@ public class ServerDatacenter implements IServer {
         this.dataStore = new DataStore();
         this.reportService = new ReportService();
         
-        // Iniciar TcpHandler para receber dados do Edge
-        this.tcpHandler = new TcpHandler(tcpPort, dataStore, threadPool);
+        // Iniciar TcpHandler para receber dados do Edge (usa KeyManager compartilhado)
+        this.tcpHandler = new TcpHandler(tcpPort, dataStore, threadPool, keyManager);
         threadPool.submit(tcpHandler);
-        logger.info("TcpHandler iniciado na porta {}", tcpPort);
+        logger.info("TcpHandler (Edge) iniciado na porta {}", tcpPort);
 
-        // Inicializar AuthClient para delegação de autenticação HTTP
+        // Inicializar AuthClient para delegação de autenticação (browser)
         this.authClient = new AuthClient(name);
         logger.info("AuthClient configurado para localhost:4001");
 
-        // Iniciar HttpHandler para relatórios (com suporte a autenticação via AuthServer)
-        this.httpHandler = new HttpHandler(httpPort, dataStore, reportService, keyManager);
-        httpHandler.setAuthClient(authClient);
-        httpHandler.start(threadPool);
+        // Iniciar ClientTcpHandler para conexões do CLI client (porta 9090)
+        JWT jwt = new JWT(ServerAuth.JWT_SECRET, "AuthServer");
+        this.clientTcpHandler = new ClientTcpHandler(clientTcpPort, dataStore, reportService, threadPool, keyManager, jwt);
+        threadPool.submit(clientTcpHandler);
+        logger.info("ClientTcpHandler (CLI) iniciado na porta {}", clientTcpPort);
 
-        // Iniciar BrowserHttpHandler para testes via browser (porta 9091)
-        int browserPort = httpPort + 1;
+        // Iniciar BrowserHttpHandler para acesso via browser (porta 9091)
+        int browserPort = clientTcpPort + 1;
         this.browserHandler = new BrowserHttpHandler(browserPort, dataStore, reportService, authClient);
         browserHandler.start(threadPool);
+        logger.info("BrowserHttpHandler iniciado na porta {}", browserPort);
 
         // Iniciar UdpHandler para mensagens do Discovery (ex: RE_REGISTER)
         this.udpHandler = new UdpHandler(udpChannel, this::performReRegister);
@@ -121,7 +125,7 @@ public class ServerDatacenter implements IServer {
         }
 
         // Re-registrar
-        if (!udpClient.register(tcpPort, httpPort)) {
+        if (!udpClient.register(tcpPort, clientTcpPort)) {
             logger.error("Falha no re-registro com Discovery");
             return;
         }
@@ -148,8 +152,8 @@ public class ServerDatacenter implements IServer {
             tcpHandler.stop();
         }
         
-        if (httpHandler != null) {
-            httpHandler.stop();
+        if (clientTcpHandler != null) {
+            clientTcpHandler.stop();
         }
 
         if (browserHandler != null) {
@@ -178,7 +182,7 @@ public class ServerDatacenter implements IServer {
     @Override
     public void showStatus() {
         logger.info("=== Status do Servidor Datacenter ===");
-        logger.info("Nome: {} | TCP: {} | HTTP: {} | Status: {}", name, tcpPort, httpPort, running ? "Em execução" : "Parado");
+        logger.info("Nome: {} | EdgeTCP: {} | ClientTCP: {} | Status: {}", name, tcpPort, clientTcpPort, running ? "Em execução" : "Parado");
         logger.info("Leituras: {} | Alertas: {}", 
                 dataStore != null ? dataStore.getCount() : 0, 
                 dataStore != null ? dataStore.getAlertCount() : 0);
@@ -186,11 +190,11 @@ public class ServerDatacenter implements IServer {
 
     public static void main(String[] args) {
         int tcpPort = args.length > 0 ? Integer.parseInt(args[0]) : 8080;
-        int httpPort = args.length > 1 ? Integer.parseInt(args[1]) : 9090;
+        int clientTcpPort = args.length > 1 ? Integer.parseInt(args[1]) : 9090;
         String discoveryHost = args.length > 2 ? args[2] : "localhost";
         int discoveryPort = args.length > 3 ? Integer.parseInt(args[3]) : 4000;
 
-        ServerDatacenter server = new ServerDatacenter(tcpPort, httpPort, discoveryHost, discoveryPort);
+        ServerDatacenter server = new ServerDatacenter(tcpPort, clientTcpPort, discoveryHost, discoveryPort);
         Runtime.getRuntime().addShutdownHook(new Thread(server::stop));
 
         server.start();

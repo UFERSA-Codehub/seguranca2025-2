@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ###############################################################################
-# Script para parar/reiniciar sensores
+# Para e opcionalmente reinicia os sensores
 #
 # Uso:
 #   ./scripts/stop-sensors.sh         - Para todos os sensores
@@ -13,7 +13,7 @@ source "$(dirname "$0")/config.sh"
 ACTION="${1:-stop}"
 
 echo ""
-echo -e "${YELLOW}🛑 Parando sensores...${NC}"
+echo -e "${YELLOW}Parando sensores...${NC}"
 echo ""
 
 stopped_count=0
@@ -29,7 +29,7 @@ for sensor_config in "${SENSORS[@]}"; do
             echo -e "  ${YELLOW}•${NC} Parando $sensor_id (PID: $pid)..."
             kill -TERM "$pid" 2>/dev/null
             
-            # Aguardar término graceful (max 3s)
+            # Aguardar termino graceful (max 3s)
             for i in {1..3}; do
                 if ! ps -p "$pid" > /dev/null 2>&1; then
                     break
@@ -45,22 +45,22 @@ for sensor_config in "${SENSORS[@]}"; do
             echo -e "  ${GREEN}✓${NC} $sensor_id parado"
             ((stopped_count++))
         else
-            echo -e "  ${YELLOW}•${NC} $sensor_id já estava parado"
+            echo -e "  ${YELLOW}•${NC} $sensor_id ja estava parado"
         fi
         
         rm -f "$pid_file"
     else
-        echo -e "  ${YELLOW}•${NC} $sensor_id não encontrado (sem PID file)"
+        echo -e "  ${YELLOW}•${NC} $sensor_id nao encontrado (sem PID file)"
     fi
 done
 
 echo ""
-echo -e "${GREEN}✅ $stopped_count sensor(es) parado(s)${NC}"
+echo -e "${GREEN}$stopped_count sensor(es) parado(s)${NC}"
 echo ""
 
 # Reiniciar se solicitado
 if [ "$ACTION" = "restart" ]; then
-    echo -e "${GREEN}🔄 Reiniciando sensores...${NC}"
+    echo -e "${GREEN}Reiniciando sensores...${NC}"
     echo ""
     
     for sensor_config in "${SENSORS[@]}"; do
@@ -68,7 +68,7 @@ if [ "$ACTION" = "restart" ]; then
         
         sensor_args="$sensor_id $password $DISCOVERY_HOST $DISCOVERY_PORT"
         
-        mvn -f "$POM_FILE" exec:java \
+        mvn -f "$POM_FILE" exec:java -o \
             -Dexec.mainClass="$SENSOR_CLASS" \
             -Dexec.args="$sensor_args" \
             -Dexec.cleanupDaemonThreads=false \
@@ -82,6 +82,6 @@ if [ "$ACTION" = "restart" ]; then
     done
     
     echo ""
-    echo -e "${GREEN}✅ Sensores reiniciados${NC}"
+    echo -e "${GREEN}Sensores reiniciados${NC}"
     echo ""
 fi

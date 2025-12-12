@@ -27,6 +27,7 @@ public class DiscoveryClient {
     }
 
     public boolean handshake() {
+        channel.setTracePeerId("DISCOVERY");
         channel.send(channel.buildHello(), discoveryHost, discoveryPort);
         logger.debug("HELLO enviado para Discovery");
 

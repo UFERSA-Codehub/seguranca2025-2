@@ -1,27 +1,37 @@
 #!/bin/bash
 
 ###############################################################################
-# Wrapper para scripts/start-system.sh e scripts/start-system-interactive.sh
+# Sistema de Monitoramento Ambiental
 #
 # Uso:
-#   ./system.sh                  - Modo daemon (todos em background)
-#   ./system.sh --interactive    - Modo interativo (Discovery/Datacenter com comandos)
-#   ./system.sh -i               - Atalho para --interactive
-#   ./system.sh --trace          - Modo interativo com tracing + dashboard
-#   ./system.sh -t               - Atalho para --trace
+#   ./system.sh           - Inicia o sistema
+#   ./system.sh -t        - Inicia com tracing + dashboard
+#   ./system.sh --stop    - Para o sistema
+#   ./system.sh --help    - Mostra ajuda
 ###############################################################################
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Verificar argumentos
-if [[ "$1" == "--trace" ]] || [[ "$1" == "-t" ]]; then
-    echo "📊 Modo Trace selecionado (com dashboard)"
-    export TRACE_ENABLED=true
-    exec "$SCRIPT_DIR/scripts/start-system-interactive.sh" "${@:2}"
-elif [[ "$1" == "--interactive" ]] || [[ "$1" == "-i" ]]; then
-    echo "🎮 Modo Interativo selecionado"
-    exec "$SCRIPT_DIR/scripts/start-system-interactive.sh" "${@:2}"
-else
-    echo "🚀 Modo Daemon selecionado (use --interactive para modo interativo)"
-    exec "$SCRIPT_DIR/scripts/start-system.sh" "$@"
-fi
+case "$1" in
+    -t|--trace)
+        export TRACE_ENABLED=true
+        exec "$SCRIPT_DIR/scripts/start-system-interactive.sh"
+        ;;
+    --stop|-s)
+        exec "$SCRIPT_DIR/scripts/stop-system.sh"
+        ;;
+    --help|-h)
+        echo "Uso: ./system.sh [opcao]"
+        echo ""
+        echo "Opcoes:"
+        echo "  (nenhuma)    Inicia o sistema"
+        echo "  -t, --trace  Inicia com tracing + dashboard"
+        echo "  -s, --stop   Para o sistema"
+        echo "  -h, --help   Mostra esta ajuda"
+        echo ""
+        echo "Dentro do tmux, pressione Ctrl+B ? para ver atalhos."
+        ;;
+    *)
+        exec "$SCRIPT_DIR/scripts/start-system-interactive.sh"
+        ;;
+esac

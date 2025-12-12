@@ -26,18 +26,16 @@ public class ProxyHandler implements Runnable {
     private final String clientIp;
     private final int clientPort;
     private final IdsClient idsClient;
-    private final boolean isHttp;
 
     private volatile boolean running;
 
     public ProxyHandler(Socket clientSocket, String targetHost, int targetPort, 
-                       String serviceName, IdsClient idsClient, boolean isHttp) {
+                       String serviceName, IdsClient idsClient) {
         this.clientSocket = clientSocket;
         this.targetHost = targetHost;
         this.targetPort = targetPort;
         this.serviceName = serviceName;
         this.idsClient = idsClient;
-        this.isHttp = isHttp;
         this.running = true;
 
         InetSocketAddress addr = (InetSocketAddress) clientSocket.getRemoteSocketAddress();
@@ -98,6 +96,7 @@ public class ProxyHandler implements Runnable {
             "TCP",
             "RECEIVE",
             clientIp + ":" + clientPort,
+            null,
             "SESSION",
             null,
             null,
@@ -138,24 +137,16 @@ public class ProxyHandler implements Runnable {
                 if (messageType == MessageTypeTCP.DATA && decryptedPayload != null) {
                     InspectionResult result = ContentInspector.inspect(decryptedPayload, clientIp);
                     if (!result.valid()) {
-                        logger.warn("Conteudo anomalo de {}: {}", clientIp, result.reason());
-                        sendAlertToIds(result.alertType(), result.reason());
+                        logger.warn("Conteudo anomalo de {}: {} - BLOQUEANDO", clientIp, result.reason());
+                        sendAlertToIds(result.alertType(), result.reason(), result.sensorId());
+                        continue; // Drop silencioso - não informar atacante sobre detecção
                     }
                 }
 
                 // Re-encriptar e enviar ao servidor interno
                 MessageTCP serverMessage = reencryptForServer(serverChannel, serverId, clientMessage, clientId, sessionKeyManager);
                 if (serverMessage != null) {
-                    TracerFactory.getTracer().trace(TraceEvent.create(
-                        "REVERSE_PROXY",
-                        "TCP",
-                        "SEND",
-                        targetHost + ":" + targetPort,
-                        messageType != null ? messageType.name() : "ENVELOPE",
-                        serverMessage.getEncryptedPayload(),
-                        null,
-                        serviceName
-                    ));
+                    // Tracing feito apenas no RECEIVE (possui payload cifrado e decifrado)
                     serverChannel.send(serverMessage);
                 }
 
@@ -171,6 +162,7 @@ public class ProxyHandler implements Runnable {
                     "TCP",
                     "RECEIVE",
                     targetHost + ":" + targetPort,
+                    null,
                     serverResponse.getType() != null ? serverResponse.getType().name() : "ENVELOPE",
                     serverResponse.getEncryptedPayload(),
                     null,
@@ -182,16 +174,7 @@ public class ProxyHandler implements Runnable {
                     // Re-encriptar e enviar ao cliente
                     MessageTCP clientResponse = reencryptForClient(clientChannel, clientId, serverResponse, serverId, sessionKeyManager);
                     if (clientResponse != null) {
-                        TracerFactory.getTracer().trace(TraceEvent.create(
-                            "REVERSE_PROXY",
-                            "TCP",
-                            "SEND",
-                            clientIp + ":" + clientPort,
-                            serverResponse.getType() != null ? serverResponse.getType().name() : "ENVELOPE",
-                            clientResponse.getEncryptedPayload(),
-                            null,
-                            "PACKET_FILTER"
-                        ));
+                        // Tracing feito apenas no RECEIVE (possui payload cifrado e decifrado)
                         clientChannel.send(clientResponse);
                     }
                 }
@@ -288,8 +271,12 @@ public class ProxyHandler implements Runnable {
     }
 
     private void sendAlertToIds(String alertType, String reason) {
+        sendAlertToIds(alertType, reason, null);
+    }
+
+    private void sendAlertToIds(String alertType, String reason, String sensorId) {
         if (idsClient != null) {
-            idsClient.sendAlert(clientIp, clientPort, serviceName, alertType, reason);
+            idsClient.sendAlert(clientIp, clientPort, serviceName, alertType, reason, sensorId);
         }
     }
 

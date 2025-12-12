@@ -15,10 +15,14 @@ import java.util.concurrent.ExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import com.project.server.datacenter.db.DataStore;
+import com.project.server.datacenter.db.DataStore.SensorReading;
 import com.project.server.datacenter.db.ReportService;
 import com.project.tracing.TraceEvent;
 import com.project.tracing.TracerFactory;
@@ -26,6 +30,9 @@ import com.project.tracing.TracerFactory;
 public class BrowserHttpHandler {
     private static final Logger logger = LoggerFactory.getLogger("Datacenter.BrowserHttpHandler");
     private static final int DEFAULT_PAGE_SIZE = 20;
+    // Dashboard origin (WSL IP accessible from Windows - HTTPS)
+    private static final String CORS_ORIGIN = "https://172.18.64.222:3333";
+    private static final Gson gson = new Gson();
 
     private final int port;
     private final DataStore dataStore;
@@ -56,6 +63,15 @@ public class BrowserHttpHandler {
             server.createContext("/browser/reports", this::handleReportsList);
             server.createContext("/browser/report", this::handleReport);
             server.createContext("/browser/alerts", this::handleAlerts);
+
+            server.createContext("/browser/api/login", this::handleApiLogin);
+            server.createContext("/browser/api/logout", this::handleApiLogout);
+            server.createContext("/browser/api/me", this::handleApiMe);
+            server.createContext("/browser/api/status", this::handleApiStatus);
+            server.createContext("/browser/api/data", this::handleApiData);
+            server.createContext("/browser/api/alerts", this::handleApiAlerts);
+            server.createContext("/browser/api/reports", this::handleApiReports);
+            server.createContext("/browser/api/report", this::handleApiReport);
 
             server.setExecutor(executor);
             server.start();
@@ -100,12 +116,12 @@ public class BrowserHttpHandler {
 
     private void setSessionCookie(HttpExchange exchange, String sessionId) {
         exchange.getResponseHeaders().add("Set-Cookie",
-            "session=" + sessionId + "; Path=/browser; HttpOnly");
+            "session=" + sessionId + "; Path=/; HttpOnly; SameSite=None; Secure");
     }
 
     private void clearSessionCookie(HttpExchange exchange) {
         exchange.getResponseHeaders().add("Set-Cookie",
-            "session=; Path=/browser; HttpOnly; Max-Age=0");
+            "session=; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=0");
     }
 
     private boolean checkAuth(HttpExchange exchange) throws IOException {
@@ -135,10 +151,11 @@ public class BrowserHttpHandler {
                 "HTTP",
                 "RECEIVE",
                 remoteAddress,
+                null,
                 "/browser/login",
                 "[CREDENTIALS]",
                 null,
-                null
+                "BROWSER"
             ));
             
             Map<String, String> params = parseFormData(body);
@@ -230,6 +247,260 @@ public class BrowserHttpHandler {
             page, totalPages, limit, totalCount, "/browser/alerts"
         );
         sendHtml(exchange, 200, wrapInLayout("Alertas", html));
+    }
+
+    // ==================== JSON API HANDLERS ====================
+
+    private void addCorsHeaders(HttpExchange exchange) {
+        exchange.getResponseHeaders().add("Access-Control-Allow-Origin", CORS_ORIGIN);
+        exchange.getResponseHeaders().add("Access-Control-Allow-Credentials", "true");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        exchange.getResponseHeaders().add("Access-Control-Allow-Headers", "Content-Type");
+    }
+
+    private void handleApiLogin(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendApiError(exchange, 405, "Metodo nao permitido");
+            return;
+        }
+
+        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        JsonObject req = gson.fromJson(body, JsonObject.class);
+        
+        String username = req.has("username") ? req.get("username").getAsString() : null;
+        String password = req.has("password") ? req.get("password").getAsString() : null;
+
+        if (username == null || password == null) {
+            sendApiError(exchange, 400, "Username e password sao obrigatorios");
+            return;
+        }
+
+        String token = authClient.authenticate(username, password);
+        if (token == null) {
+            sendApiError(exchange, 401, "Credenciais invalidas");
+            return;
+        }
+
+        String sessionId = createSession(username);
+        setSessionCookie(exchange, sessionId);
+
+        JsonObject response = new JsonObject();
+        response.addProperty("success", true);
+        response.addProperty("username", username);
+        sendApiJson(exchange, 200, response);
+        logger.info("Usuario '{}' autenticado via API", username);
+    }
+
+    private void handleApiLogout(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+
+        String sessionId = getSessionCookie(exchange);
+        if (sessionId != null) {
+            sessions.remove(sessionId);
+        }
+        clearSessionCookie(exchange);
+
+        JsonObject response = new JsonObject();
+        response.addProperty("success", true);
+        sendApiJson(exchange, 200, response);
+    }
+
+    private void handleApiMe(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+
+        String username = getSessionUsername(exchange);
+        if (username == null) {
+            sendApiError(exchange, 401, "Nao autenticado");
+            return;
+        }
+
+        JsonObject response = new JsonObject();
+        response.addProperty("username", username);
+        response.addProperty("isAdmin", "admin".equals(username));
+        sendApiJson(exchange, 200, response);
+    }
+
+    private void handleApiStatus(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+
+        if (!checkApiAuth(exchange)) return;
+
+        JsonObject response = new JsonObject();
+        response.addProperty("readings", dataStore.getCount());
+        response.addProperty("alerts", dataStore.getAlertCount());
+        response.addProperty("sensors", dataStore.getSensorIds().size());
+        response.addProperty("username", getSessionUsername(exchange));
+        sendApiJson(exchange, 200, response);
+    }
+
+    private void handleApiData(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+
+        if (!checkApiAuth(exchange)) return;
+
+        Map<String, String> queryParams = parseQueryParams(exchange);
+        int page = parseIntParam(queryParams, "page", 1);
+        int limit = parseIntParam(queryParams, "limit", DEFAULT_PAGE_SIZE);
+        int offset = (page - 1) * limit;
+
+        int totalCount = dataStore.getCount();
+        int totalPages = (int) Math.ceil((double) totalCount / limit);
+
+        List<SensorReading> readings = dataStore.getAll(offset, limit);
+        JsonArray dataArray = new JsonArray();
+        for (SensorReading r : readings) {
+            JsonObject item = new JsonObject();
+            item.addProperty("sensorId", r.sensorId());
+            item.addProperty("timestamp", r.timestamp());
+            item.add("data", r.data());
+            item.addProperty("isAlert", r.isAlert());
+            item.addProperty("alertType", r.alertType());
+            dataArray.add(item);
+        }
+
+        JsonObject response = new JsonObject();
+        response.add("data", dataArray);
+        response.addProperty("page", page);
+        response.addProperty("totalPages", totalPages);
+        response.addProperty("totalCount", totalCount);
+        response.addProperty("limit", limit);
+        sendApiJson(exchange, 200, response);
+    }
+
+    private void handleApiAlerts(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+
+        if (!checkApiAuth(exchange)) return;
+
+        Map<String, String> queryParams = parseQueryParams(exchange);
+        int page = parseIntParam(queryParams, "page", 1);
+        int limit = parseIntParam(queryParams, "limit", DEFAULT_PAGE_SIZE);
+        int offset = (page - 1) * limit;
+
+        int totalCount = dataStore.getAlertCount();
+        int totalPages = (int) Math.ceil((double) totalCount / limit);
+
+        List<SensorReading> alerts = dataStore.getAlerts(offset, limit);
+        JsonArray dataArray = new JsonArray();
+        for (SensorReading r : alerts) {
+            JsonObject item = new JsonObject();
+            item.addProperty("sensorId", r.sensorId());
+            item.addProperty("timestamp", r.timestamp());
+            item.add("data", r.data());
+            item.addProperty("isAlert", r.isAlert());
+            item.addProperty("alertType", r.alertType());
+            dataArray.add(item);
+        }
+
+        JsonObject response = new JsonObject();
+        response.add("alerts", dataArray);
+        response.addProperty("page", page);
+        response.addProperty("totalPages", totalPages);
+        response.addProperty("totalCount", totalCount);
+        response.addProperty("limit", limit);
+        sendApiJson(exchange, 200, response);
+    }
+
+    private void handleApiReports(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+
+        if (!checkApiAuth(exchange)) return;
+
+        List<String> reports = reportService.getAvailableReports();
+        JsonArray reportsArray = new JsonArray();
+        for (String r : reports) {
+            reportsArray.add(r);
+        }
+
+        JsonObject response = new JsonObject();
+        response.add("reports", reportsArray);
+        sendApiJson(exchange, 200, response);
+    }
+
+    private void handleApiReport(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+
+        if (!checkApiAuth(exchange)) return;
+
+        String path = exchange.getRequestURI().getPath();
+        String[] parts = path.split("/");
+        String reportType = parts.length >= 5 ? parts[4] : "pollution";
+
+        JsonObject reportData = reportService.generateReportJson(reportType, dataStore.getAll());
+        sendApiJson(exchange, 200, reportData);
+    }
+
+    private boolean checkApiAuth(HttpExchange exchange) throws IOException {
+        if (!isAuthenticated(exchange)) {
+            sendApiError(exchange, 401, "Nao autenticado");
+            return false;
+        }
+        return true;
+    }
+
+    private void sendApiJson(HttpExchange exchange, int status, JsonObject json) throws IOException {
+        byte[] bytes = json.toString().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
+    }
+
+    private void sendApiError(HttpExchange exchange, int status, String message) throws IOException {
+        JsonObject error = new JsonObject();
+        error.addProperty("error", message);
+        sendApiJson(exchange, status, error);
     }
 
     // ==================== HTML RENDERING ====================
@@ -410,20 +681,7 @@ public class BrowserHttpHandler {
     }
 
     private void sendHtml(HttpExchange exchange, int status, String html) throws IOException {
-        String remoteAddress = exchange.getRemoteAddress() != null 
-            ? exchange.getRemoteAddress().toString() 
-            : "unknown";
-        
-        TracerFactory.getTracer().trace(TraceEvent.create(
-            "DATACENTER",
-            "HTTP",
-            "SEND",
-            remoteAddress,
-            exchange.getRequestURI().getPath() + " [" + status + "]",
-            html.length() > 500 ? html.substring(0, 500) + "..." : html,
-            null,
-            null
-        ));
+        // Tracing feito apenas no RECEIVE (possui payload cifrado e decifrado)
         
         byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");

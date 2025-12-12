@@ -43,14 +43,16 @@ public class IdsCommandHandler implements Runnable {
                 return;
             }
 
+            String peerId = hello.getSenderId();
+            // Definir tracePeerId logo apos saber o peerId, antes de enviar qualquer resposta
+            channel.setTracePeerId(peerId);
+
             MessageTCP challenge = channel.handleHello(hello);
             if (challenge == null) {
                 logger.error("Falha ao processar HELLO do IDS");
                 return;
             }
             channel.send(challenge);
-
-            String peerId = hello.getSenderId();
             logger.debug("Handshake com IDS concluído ({})", peerId);
 
             while (!idsSocket.isClosed()) {
@@ -104,19 +106,28 @@ public class IdsCommandHandler implements Runnable {
         try {
             JsonObject data = gson.fromJson(payload, JsonObject.class);
             String targetIp = data.get("targetIp").getAsString();
+            String sensorId = data.has("sensorId") ? data.get("sensorId").getAsString() : null;
 
-            logger.warn("Comando TERMINATE recebido do IDS para IP: {}", targetIp);
-
-            serverEdge.terminateByIp(targetIp);
+            if (sensorId != null) {
+                logger.warn("Comando TERMINATE recebido do IDS para sensor: {}", sensorId);
+                serverEdge.terminateBySensorId(sensorId);
+            } else {
+                logger.warn("Comando TERMINATE recebido do IDS para IP: {}", targetIp);
+                serverEdge.terminateByIp(targetIp);
+            }
 
             JsonObject response = new JsonObject();
             response.addProperty("status", "terminated");
             response.addProperty("ip", targetIp);
+            if (sensorId != null) {
+                response.addProperty("sensorId", sensorId);
+            }
 
             MessageTCP ack = channel.buildEncrypted(peerId, MessageTypeTCP.TERMINATE_ACK, response.toString());
             if (ack != null) {
                 channel.send(ack);
-                logger.info("TERMINATE_ACK enviado para IDS");
+                String target = sensorId != null ? "sensor " + sensorId : "IP " + targetIp;
+                logger.info("TERMINATE_ACK enviado para IDS - alvo: {}", target);
             }
 
         } catch (Exception e) {

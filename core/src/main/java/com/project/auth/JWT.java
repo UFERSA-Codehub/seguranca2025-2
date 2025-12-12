@@ -41,7 +41,7 @@ public class JWT {
         return token;
     }
 
-    public Claims validateToken(String token) {
+    private Claims validateToken(String token) {
         try {
             Claims claims = Jwts.parser()
                     .verifyWith(secretKey)
@@ -85,15 +85,5 @@ public class JWT {
 
         logger.debug("Token gerado para cliente '{}', expira em {}", username, expiration);
         return token;
-    }
-
-    public String getSubject(String token) {
-        Claims claims = validateToken(token);
-        return claims != null ? claims.getSubject() : null;
-    }
-
-    public String getRole(String token) {
-        Claims claims = validateToken(token);
-        return claims != null ? claims.get("role", String.class) : null;
     }
 }

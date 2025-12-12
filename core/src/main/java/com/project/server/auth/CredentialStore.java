@@ -23,6 +23,9 @@ public class CredentialStore {
         sensorCredentials.put("SENSOR_002", "senha456");
         sensorCredentials.put("SENSOR_003", "senha789");
         sensorCredentials.put("SENSOR_004", "senha321");
+        // MALICIOUS_SENSOR mantido para testes de segurança.
+        // O sistema bloqueia dados anômalos no firewall (ContentInspector) e
+        // adiciona sensores à blacklist via IDS quando detecta comportamento malicioso.
         sensorCredentials.put("MALICIOUS_SENSOR", "sensor123");
         logger.debug("Sensores de teste registrados: {}", sensorCredentials.size());
 
@@ -55,16 +58,6 @@ public class CredentialStore {
             logger.warn("Senha inválida para usuário: {}", username);
         }
         return valid;
-    }
-
-    public void registerSensor(String sensorId, String password) {
-        sensorCredentials.put(sensorId, password);
-        logger.debug("Sensor registrado: {}", sensorId);
-    }
-
-    public void registerUser(String username, String password) {
-        userCredentials.put(username, password);
-        logger.debug("Usuário registrado: {}", username);
     }
 
     public int getSensorCount() {

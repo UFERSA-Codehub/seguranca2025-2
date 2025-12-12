@@ -39,6 +39,7 @@ public class UdpClient {
     public boolean handshake() {
         String peerInfo = discoveryHost + ":" + discoveryPort;
 
+        channel.setTracePeerId("DISCOVERY");
         channel.send(channel.buildHello(), discoveryHost, discoveryPort);
         logger.debug("HELLO enviado para DISCOVERY ({})", peerInfo);
 

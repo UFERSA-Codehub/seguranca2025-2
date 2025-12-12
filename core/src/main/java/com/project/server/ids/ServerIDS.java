@@ -18,8 +18,6 @@ import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
 import com.project.network.SecureTCPChannel;
 import com.project.server.IServer;
-import com.project.tracing.TraceEvent;
-import com.project.tracing.TracerFactory;
 
 public class ServerIDS implements IServer {
     private static final Logger logger = LoggerFactory.getLogger("IDS");
@@ -84,6 +82,10 @@ public class ServerIDS implements IServer {
     }
 
     public void sendTerminateToEdge(String targetIp) {
+        sendTerminateToEdge(targetIp, null);
+    }
+
+    public void sendTerminateToEdge(String targetIp, String sensorId) {
         if (!ensureEdgeConnection()) {
             logger.error("Nao foi possivel conectar ao Edge para enviar TERMINATE");
             return;
@@ -93,26 +95,21 @@ public class ServerIDS implements IServer {
             JsonObject payload = new JsonObject();
             payload.addProperty("targetIp", targetIp);
             payload.addProperty("reason", "Limite de alertas excedido");
+            if (sensorId != null) {
+                payload.addProperty("sensorId", sensorId);
+            }
 
             MessageTCP terminateMsg = edgeChannel.buildEncrypted("EDGE", MessageTypeTCP.TERMINATE, payload.toString());
             if (terminateMsg != null) {
                 edgeChannel.send(terminateMsg);
-                logger.info("TERMINATE enviado para Edge - IP alvo: {}", targetIp);
+                String target = sensorId != null ? "sensor " + sensorId : "IP " + targetIp;
+                logger.info("TERMINATE enviado para Edge - alvo: {}", target);
 
-                TracerFactory.getTracer().trace(TraceEvent.create(
-                    "IDS",
-                    "TCP",
-                    "SEND",
-                    EDGE_HOST + ":" + EDGE_COMMAND_PORT,
-                    "TERMINATE",
-                    null,
-                    payload.toString(),
-                    "EDGE"
-                ));
+                // Tracing feito apenas no RECEIVE (possui payload cifrado e decifrado)
 
                 MessageTCP response = edgeChannel.receive();
                 if (response != null && edgeChannel.verify(response)) {
-                    logger.info("Edge confirmou TERMINATE para {}", targetIp);
+                    logger.info("Edge confirmou TERMINATE para {}", target);
                 }
             }
         } catch (Exception e) {
@@ -132,6 +129,8 @@ public class ServerIDS implements IServer {
             edgeSocket = new Socket(EDGE_HOST, EDGE_COMMAND_PORT);
             edgeSocket.setSoTimeout(10000);
             edgeChannel = new SecureTCPChannel("IDS", keyManager, edgeSocket);
+            // Definir tracePeerId antes de qualquer send/receive para rastreamento correto
+            edgeChannel.setTracePeerId("EDGE");
 
             // Handshake com Edge
             MessageTCP hello = edgeChannel.buildHello();

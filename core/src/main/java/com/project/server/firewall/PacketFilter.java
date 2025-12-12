@@ -28,14 +28,18 @@ public class PacketFilter implements IServer {
 
     private static final Map<Integer, Integer> PORT_MAPPING = Map.of(
         3000, 3001,   // AuthServer route
+        3005, -1,     // Honeypot - sem rota, testa default deny
         3010, 3011,   // Edge route
-        3020, 3021    // Datacenter route
+        3020, 3021,   // Datacenter route (Edge batches)
+        3030, 3031    // Datacenter route (CLI client)
     );
 
     private static final Map<Integer, String> SERVICE_NAMES = Map.of(
         3000, "AuthServer",
+        3005, "Honeypot",
         3010, "Edge",
-        3020, "Datacenter"
+        3020, "Datacenter",
+        3030, "DatacenterCLI"
     );
 
     private final String name;
@@ -61,7 +65,7 @@ public class PacketFilter implements IServer {
             this.keyManager = new KeyManager();
             this.ruleEngine = new RuleEngine();
             this.idsClient = new IdsClient(name, keyManager, IDS_HOST, IDS_PORT);
-            this.threadPool = Executors.newCachedThreadPool();
+            this.threadPool = Executors.newFixedThreadPool(20);
             this.running = true;
         } catch (NoSuchAlgorithmException e) {
             logger.error("Erro ao inicializar KeyManager: {}", e.getMessage());
@@ -94,7 +98,7 @@ public class PacketFilter implements IServer {
             while (running) {
                 try {
                     Socket clientSocket = serverSocket.accept();
-                    handleConnection(clientSocket, targetPort, serviceName);
+                    handleConnection(clientSocket, listenPort, targetPort, serviceName);
                 } catch (IOException e) {
                     if (running) {
                         logger.error("Erro ao aceitar conexao na porta {}: {}", listenPort, e.getMessage());
@@ -107,7 +111,7 @@ public class PacketFilter implements IServer {
         }
     }
 
-    private void handleConnection(Socket clientSocket, int targetPort, String serviceName) {
+    private void handleConnection(Socket clientSocket, int listenPort, int targetPort, String serviceName) {
         String clientIp = extractIp(clientSocket);
         int clientPort = clientSocket.getPort();
         String clientAddr = clientIp + ":" + clientPort;
@@ -119,28 +123,20 @@ public class PacketFilter implements IServer {
             "TCP",
             "RECEIVE",
             clientAddr,
+            null,
             "CONNECTION",
             null,
             null,
-            "SENSOR"
+            clientAddr
         ));
 
-        // Verificar regras
-        RuleEngine.CheckResult result = ruleEngine.checkConnection(clientIp, targetPort);
+        // Verificar regras (usando listenPort - porta externa)
+        RuleEngine.CheckResult result = ruleEngine.checkConnection(clientIp, listenPort);
 
         if (!result.allowed()) {
             logger.warn("Conexao bloqueada de {} - {}: {}", clientIp, result.alertType(), result.reason());
 
-            TracerFactory.getTracer().trace(TraceEvent.create(
-                "PACKET_FILTER",
-                "TCP",
-                "SEND",
-                clientAddr,
-                "BLOCK",
-                null,
-                result.reason(),
-                "SENSOR"
-            ));
+            // Tracing feito apenas no RECEIVE (possui payload cifrado e decifrado)
 
             // Enviar alerta ao IDS
             idsClient.sendAlert(clientIp, clientPort, serviceName, result.alertType(), result.reason());
@@ -161,16 +157,7 @@ public class PacketFilter implements IServer {
 
             logger.debug("Forwarding {} -> ReverseProxy:{}", clientIp, targetPort);
 
-            TracerFactory.getTracer().trace(TraceEvent.create(
-                "PACKET_FILTER",
-                "TCP",
-                "SEND",
-                REVERSE_PROXY_HOST + ":" + targetPort,
-                "FORWARD",
-                null,
-                null,
-                "REVERSE_PROXY"
-            ));
+            // Tracing feito apenas no RECEIVE (possui payload cifrado e decifrado)
 
             ConnectionForwarder forwarder = new ConnectionForwarder(clientSocket, serverSocket, clientIp, serviceName);
             threadPool.submit(forwarder);

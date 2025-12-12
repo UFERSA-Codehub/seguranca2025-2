@@ -51,6 +51,7 @@ public class UdpHandler {
             logger.error("Falha ao processar HELLO de {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(challenge, clientAddress, clientPort);
         logger.debug("CHALLENGE enviado para {} ({})", senderId, peerInfo);
     }
@@ -123,6 +124,7 @@ public class UdpHandler {
             logger.error("Falha ao construir resposta para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("FOUND_EDGE enviado para {}", senderId);
     }
@@ -150,17 +152,28 @@ public class UdpHandler {
             logger.info("Nenhum DATACENTER disponível para {}", senderId);
             response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.NOT_FOUND, "Nenhum DATACENTER disponível");
         } else {
-            ServiceInfo dc = registry.getFirstDatacenter();
-            int selectedPort = "http".equals(protocol) ? dc.getHttpPort() : dc.getPort();
-            String responsePayload = dc.getHost() + ":" + selectedPort;
+            String responsePayload;
+            
+            // Se firewall está habilitado e protocolo é http (CLI client), retornar endereço do PacketFilter
+            if (registry.isFirewallEnabled() && "http".equals(protocol)) {
+                responsePayload = registry.getExternalDatacenterClientAddress();
+                logger.debug("Retornando endereço do PacketFilter para CLI client {} ({})", senderId, peerInfo);
+            } else {
+                // Senão, retornar endereço real do Datacenter
+                ServiceInfo dc = registry.getFirstDatacenter();
+                int selectedPort = "http".equals(protocol) ? dc.getHttpPort() : dc.getPort();
+                responsePayload = dc.getHost() + ":" + selectedPort;
+                logger.debug("DATACENTER {} selecionado para {} (protocolo: {})", dc.getServiceId(), senderId, protocol);
+            }
+            
             response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.FOUND_DATACENTER, responsePayload);
-            logger.debug("DATACENTER {} selecionado para {} (protocolo: {})", dc.getServiceId(), senderId, protocol);
         }
 
         if (response == null) {
             logger.error("Falha ao construir resposta para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("FOUND_DATACENTER enviado para {} (protocolo: {})", senderId, protocol);
     }
@@ -187,6 +200,7 @@ public class UdpHandler {
             logger.error("Falha ao construir resposta REGISTER_OK para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("REGISTER_OK enviado para {} ({})", senderId, peerInfo);
     }
@@ -214,6 +228,7 @@ public class UdpHandler {
             logger.error("Falha ao construir resposta REGISTER_OK para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("REGISTER_OK enviado para {} ({})", senderId, peerInfo);
     }
@@ -240,6 +255,7 @@ public class UdpHandler {
             logger.error("Falha ao construir resposta REGISTER_OK para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("REGISTER_OK enviado para {} ({})", senderId, peerInfo);
     }
@@ -263,6 +279,7 @@ public class UdpHandler {
         String peerInfo = clientAddress.getHostAddress() + ":" + clientPort;
         logger.warn("HEARTBEAT de serviço não registrado: {} ({}) - solicitando RE_REGISTER", senderId, peerInfo);
         MessageUDP reRegister = new MessageUDP(MessageTypeUDP.RE_REGISTER, serverId);
+        channel.setTracePeerId(senderId);
         channel.send(reRegister, clientAddress, clientPort);
     }
 }

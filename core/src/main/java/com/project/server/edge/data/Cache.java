@@ -42,22 +42,6 @@ public class Cache {
         logger.debug("Dados armazenados para sensor '{}': {} entradas, alert={}", sensorId, entries.size(), isAlert);
     }
 
-    public List<CacheEntry> getDataForSensor(String sensorId) {
-        return sensorData.getOrDefault(sensorId, new ArrayList<>());
-    }
-
-    public CacheEntry getLatestForSensor(String sensorId) {
-        List<CacheEntry> entries = sensorData.get(sensorId);
-        if (entries == null || entries.isEmpty()) {
-            return null;
-        }
-        return entries.get(entries.size() - 1);
-    }
-
-    public Map<String, List<CacheEntry>> getAllData() {
-        return new ConcurrentHashMap<>(sensorData);
-    }
-
     public List<CacheEntry> getAllEntries() {
         List<CacheEntry> all = new ArrayList<>();
         for (List<CacheEntry> entries : sensorData.values()) {

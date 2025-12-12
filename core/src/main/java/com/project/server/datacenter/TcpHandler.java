@@ -3,7 +3,6 @@ package com.project.server.datacenter;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.ExecutorService;
 
 import org.slf4j.Logger;
@@ -31,13 +30,15 @@ public class TcpHandler implements Runnable {
     private final int port;
     private final DataStore dataStore;
     private final ExecutorService executor;
+    private final KeyManager keyManager;
     private ServerSocket serverSocket;
     private volatile boolean running;
 
-    public TcpHandler(int port, DataStore dataStore, ExecutorService executor) {
+    public TcpHandler(int port, DataStore dataStore, ExecutorService executor, KeyManager keyManager) {
         this.port = port;
         this.dataStore = dataStore;
         this.executor = executor;
+        this.keyManager = keyManager;
         this.running = false;
     }
 
@@ -72,9 +73,8 @@ public class TcpHandler implements Runnable {
         SecureTCPChannel channel = null;
 
         try {
-            // Passo 1 - Criar KeyManager e canal seguro
-            KeyManager keyManager = new KeyManager();
-            channel = new SecureTCPChannel("DATACENTER", keyManager, clientSocket);
+            // Usar KeyManager compartilhado do servidor (evita gerar novo par RSA por conexao)
+            channel = new SecureTCPChannel("DATACENTER", this.keyManager, clientSocket);
 
             // Passo 2 - Receber HELLO
             MessageTCP hello = channel.receive();
@@ -83,6 +83,8 @@ public class TcpHandler implements Runnable {
                 return;
             }
             String edgeId = hello.getSenderId();
+            // Definir tracePeerId logo apos saber o edgeId, antes de enviar qualquer resposta
+            channel.setTracePeerId(edgeId);
             logger.debug("HELLO recebido de {} ({})", edgeId, peerInfo);
 
             // Passo 3 - Enviar CHALLENGE
@@ -117,8 +119,6 @@ public class TcpHandler implements Runnable {
 
                 handleEnvelope(channel, message, edgeId, peerInfo);
             }
-        } catch (NoSuchAlgorithmException e) {
-            logger.error("Erro ao criar KeyManager para {}: {}", peerInfo, e.getMessage());
         } catch (IOException e) {
             logger.error("Erro de I/O com {}: {}", peerInfo, e.getMessage());
         } finally {

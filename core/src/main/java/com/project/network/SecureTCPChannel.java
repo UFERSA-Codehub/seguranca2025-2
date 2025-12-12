@@ -31,6 +31,7 @@ public class SecureTCPChannel {
     private final BufferedReader reader;
     private final PrintWriter writer;
     private String tracePeerId;
+    private String traceEntityId;
 
     public SecureTCPChannel(String entityId, KeyManager keyManager, Socket socket) throws IOException {
         this.entityId = entityId;
@@ -39,10 +40,15 @@ public class SecureTCPChannel {
         this.reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         this.writer = new PrintWriter(socket.getOutputStream(), true);
         this.tracePeerId = null;
+        this.traceEntityId = null;
     }
 
     public void setTracePeerId(String peerId) {
         this.tracePeerId = peerId;
+    }
+
+    public void setTraceEntityId(String entityId) {
+        this.traceEntityId = entityId;
     }
 
     // ==================== ENVIO ====================
@@ -51,18 +57,8 @@ public class SecureTCPChannel {
         try {
             String json = message.toJson();
             writer.println(json);
-            logger.debug("Mensagem {} enviada", message.getType());
-            
-            TracerFactory.getTracer().trace(TraceEvent.create(
-                entityId,
-                "TCP",
-                "SEND",
-                socket.getRemoteSocketAddress() != null ? socket.getRemoteSocketAddress().toString() : "unknown",
-                message.getType() != null ? message.getType().name() : "ENVELOPE",
-                message.getEncryptedPayload(),
-                null,
-                tracePeerId
-            ));
+            logger.debug("Mensagem {} enviada", message.getType() != null ? message.getType() : "ENVELOPE");
+            // Tracing feito apenas no RECEIVE (possui payload cifrado e decifrado)
         } catch (Exception e) {
             logger.error("Erro ao enviar mensagem: {}", e.getMessage());
         }
@@ -80,18 +76,24 @@ public class SecureTCPChannel {
             MessageTCP message = MessageTCP.fromJson(json);
             logger.debug("Mensagem {} recebida de {}", message.getType(), message.getSenderId());
             
-            // Traçar apenas mensagens não cifradas (HELLO, CHALLENGE)
-            // Mensagens cifradas serão traçadas após a decifragem
+            // Traçar apenas mensagens nao cifradas (HELLO, CHALLENGE)
+            // Mensagens cifradas serao traçadas apos a decifragem
+            // Usar tracePeerId (peer real da conexão) se disponível, senão senderId da mensagem
+            // Isso evita que proxies apareçam como conexões diretas (ex: SENSOR ← AUTH quando deveria ser SENSOR ← EDGE)
             if (message.getEncryptedPayload() == null) {
+                String peerId = tracePeerId != null ? tracePeerId : message.getSenderId();
+                String componentId = traceEntityId != null ? traceEntityId : entityId;
+                String localAddr = socket.getLocalSocketAddress() != null ? socket.getLocalSocketAddress().toString() : "unknown";
                 TracerFactory.getTracer().trace(TraceEvent.create(
-                    entityId,
+                    componentId,
                     "TCP",
                     "RECEIVE",
                     socket.getRemoteSocketAddress() != null ? socket.getRemoteSocketAddress().toString() : "unknown",
+                    localAddr,
                     message.getType() != null ? message.getType().name() : "UNKNOWN",
                     null,
                     null,
-                    message.getSenderId()
+                    peerId
                 ));
             }
             
@@ -172,15 +174,20 @@ public class SecureTCPChannel {
             AES aes = new AES(keyManager.getPeerAESKey(peerId));
             String decrypted = aes.decrypt(message.getEncryptedPayload());
             
+            // Usar traceEntityId/tracePeerId para rastreamento se definidos
+            String componentId = traceEntityId != null ? traceEntityId : entityId;
+            String traceTargetPeerId = tracePeerId != null ? tracePeerId : peerId;
+            String localAddr = socket.getLocalSocketAddress() != null ? socket.getLocalSocketAddress().toString() : "unknown";
             TracerFactory.getTracer().trace(TraceEvent.create(
-                entityId,
+                componentId,
                 "TCP",
                 "RECEIVE",
                 socket.getRemoteSocketAddress() != null ? socket.getRemoteSocketAddress().toString() : "unknown",
+                localAddr,
                 message.getType() != null ? message.getType().name() : "PAYLOAD",
                 message.getEncryptedPayload(),
                 decrypted,
-                peerId
+                traceTargetPeerId
             ));
             
             return decrypted;
@@ -241,15 +248,20 @@ public class SecureTCPChannel {
             String envelopeJson = aes.decrypt(message.getEncryptedPayload());
             EnvelopeTCP envelope = EnvelopeTCP.fromJson(envelopeJson);
             
+            // Usar traceEntityId/tracePeerId para rastreamento se definidos
+            String componentId = traceEntityId != null ? traceEntityId : entityId;
+            String traceTargetPeerId = tracePeerId != null ? tracePeerId : peerId;
+            String localAddr = socket.getLocalSocketAddress() != null ? socket.getLocalSocketAddress().toString() : "unknown";
             TracerFactory.getTracer().trace(TraceEvent.create(
-                entityId,
+                componentId,
                 "TCP",
                 "RECEIVE",
                 socket.getRemoteSocketAddress() != null ? socket.getRemoteSocketAddress().toString() : "unknown",
+                localAddr,
                 envelope.getType() != null ? envelope.getType().name() : "ENVELOPE",
                 message.getEncryptedPayload(),
                 envelopeJson,
-                peerId
+                traceTargetPeerId
             ));
             
             return envelope;
@@ -305,14 +317,6 @@ public class SecureTCPChannel {
     }
 
     // ==================== GETTERS ====================
-
-    public String getEntityId() {
-        return entityId;
-    }
-
-    public KeyManager getKeyManager() {
-        return keyManager;
-    }
 
     public Socket getSocket() {
         return socket;

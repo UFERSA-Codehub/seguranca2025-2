@@ -13,9 +13,11 @@ import {
 } from 'lucide-react';
 
 const ZONE_COLORS = {
-    external: '#6366f1',
+    external: '#ef4444',
+    shared: '#8b5cf6',
     dmz: '#f59e0b',
-    internal: '#22c55e',
+    internal: '#3b82f6',
+    malicious: '#dc2626',
 };
 
 const ICONS = {
@@ -30,7 +32,7 @@ const ICONS = {
 };
 
 function ComponentNode({ data }) {
-    const { label, zone, componentType, isActive } = data;
+    const { label, zone, componentType, isActive, address } = data;
     const borderColor = ZONE_COLORS[zone] || '#64748b';
     const IconComponent = ICONS[componentType] || Box;
 
@@ -64,6 +66,11 @@ function ComponentNode({ data }) {
             <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase' }}>
                 {zone}
             </div>
+            {address && (
+                <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px', fontFamily: 'monospace' }}>
+                    {address}
+                </div>
+            )}
         </div>
     );
 }

@@ -10,7 +10,7 @@ public class TraceCollector {
     private static final int WS_PORT = 6001;
 
     public static void main(String[] args) {
-        logger.info("Starting Trace Collector...");
+        logger.info("Iniciando Trace Collector...");
 
         WebSocketBroadcaster broadcaster = new WebSocketBroadcaster(WS_PORT);
         broadcaster.start();
@@ -20,8 +20,9 @@ public class TraceCollector {
         udpThread.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            logger.info("Shutting down Trace Collector...");
+            logger.info("Encerrando Trace Collector...");
             udpListener.stop();
+            broadcaster.shutdown();
             try {
                 broadcaster.stop(1000);
             } catch (InterruptedException e) {
@@ -29,6 +30,6 @@ public class TraceCollector {
             }
         }));
 
-        logger.info("Trace Collector running - UDP:{}, WebSocket:{}", UDP_PORT, WS_PORT);
+        logger.info("Trace Collector em execução - UDP:{}, WebSocket:{}", UDP_PORT, WS_PORT);
     }
 }

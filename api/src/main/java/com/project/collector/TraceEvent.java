@@ -6,11 +6,13 @@ import com.google.gson.GsonBuilder;
 public record TraceEvent(
     String traceId,
     long timestamp,
+    long sequenceNumber,
     String componentType,
     String componentId,
     String protocol,
     String direction,
     String remoteAddress,
+    String localAddress,
     String messageType,
     String encryptedPayload,
     String decryptedPayload,

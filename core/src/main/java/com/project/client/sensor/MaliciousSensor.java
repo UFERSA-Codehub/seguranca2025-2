@@ -22,6 +22,7 @@ public class MaliciousSensor {
         TAMPERED_MESSAGE,
         NO_AUTH,
         ANOMALY_DATA,
+        MALFORMED_DATA,
         ALL
     }
 
@@ -87,6 +88,7 @@ public class MaliciousSensor {
                 case TAMPERED_MESSAGE -> attackTamperedMessage();
                 case NO_AUTH -> attackNoAuth();
                 case ANOMALY_DATA -> attackAnomalyData();
+                case MALFORMED_DATA -> attackMalformedData();
                 case ALL -> runAllAttacks();
             }
 
@@ -115,6 +117,9 @@ public class MaliciousSensor {
         
         printSeparator("TESTE 5: DADOS ANOMALOS (VALORES FORA DO RANGE)");
         attackAnomalyData();
+        
+        printSeparator("TESTE 6: DADOS MALFORMADOS (JSON INVALIDO)");
+        attackMalformedData();
         
         logger.info("");
         logger.info("╔══════════════════════════════════════════════════════════╗");
@@ -354,6 +359,84 @@ public class MaliciousSensor {
         return data;
     }
 
+    /**
+     * Envia dados com estrutura JSON malformada/invalida.
+     * Esperado: ContentInspector detecta MALFORMED e alerta IDS.
+     */
+    private void attackMalformedData() {
+        logger.info("[ATAQUE] Enviando dados com estrutura JSON malformada...");
+        logger.info("");
+        logger.info("Tipos de malformacao a testar:");
+        logger.info("  1. Tipo errado (string em vez de numero)");
+        logger.info("  2. Campos obrigatorios faltando");
+        logger.info("  3. Objeto vazio");
+        logger.info("  4. JSON com valores null");
+        logger.info("");
+        
+        this.jwtToken = tcpClient.authenticateWithAuthServer(
+            udpClient.getAuthHost(),
+            udpClient.getAuthPort(),
+            password
+        );
+        
+        if (jwtToken == null) {
+            logger.error("Falha na autenticacao - nao foi possivel prosseguir");
+            return;
+        }
+        logger.info("[OK] Autenticado com sucesso");
+        
+        if (!tcpClient.connectToEdge(udpClient.getEdgeHost(), udpClient.getEdgePort())) {
+            logger.error("Falha ao conectar ao Edge");
+            return;
+        }
+        logger.info("[OK] Conectado ao Edge");
+        logger.info("");
+
+        String[] malformedData = generateMalformedData();
+        int alertCount = 0;
+        
+        for (int i = 0; i < malformedData.length; i++) {
+            logger.info("[{}] Enviando: {}", i + 1, malformedData[i]);
+            
+            boolean success = tcpClient.sendData(malformedData[i], jwtToken);
+            
+            if (!success) {
+                alertCount++;
+                logger.warn("    Resultado: REJEITADO/CONEXAO FECHADA");
+                logger.info("");
+                logger.info("[RESULTADO] Conexao terminada apos {} dados malformados", i + 1);
+                logger.info("[SEGURANCA] ContentInspector detectou dados invalidos!");
+                tcpClient.closeEdgeChannel();
+                return;
+            }
+            
+            logger.info("    Resultado: ACEITO (ContentInspector pode ter alertado IDS)");
+            sleep(1000);
+        }
+        
+        tcpClient.closeEdgeChannel();
+        
+        logger.info("");
+        logger.info("[RESULTADO] Todos os dados malformados foram enviados");
+        logger.info("[NOTA] ContentInspector pode ter alertado IDS mesmo com conexao mantida");
+    }
+
+    private String[] generateMalformedData() {
+        return new String[] {
+            // Caso 1: Tipo errado (string em vez de numero)
+            "{\"sensorId\":\"" + sensorId + "\",\"temperature\":\"not_a_number\",\"humidity\":50,\"co2\":400,\"pm25\":10,\"noiseLevel\":40}",
+            
+            // Caso 2: Campos obrigatorios faltando
+            "{\"sensorId\":\"" + sensorId + "\",\"temperature\":25.0}",
+            
+            // Caso 3: Objeto vazio
+            "{}",
+            
+            // Caso 4: JSON com valores null
+            "{\"sensorId\":\"" + sensorId + "\",\"temperature\":null,\"humidity\":null,\"co2\":null,\"pm25\":null,\"noiseLevel\":null}"
+        };
+    }
+
     private void printSeparator(String title) {
         logger.info("");
         logger.info("┌──────────────────────────────────────────────────────────┐");
@@ -399,6 +482,7 @@ public class MaliciousSensor {
                     System.out.println("                        TAMPERED_MESSAGE - Testa mensagem adulterada");
                     System.out.println("                        NO_AUTH - Testa envio sem autenticacao");
                     System.out.println("                        ANOMALY_DATA - Envia dados com valores anomalos");
+                    System.out.println("                        MALFORMED_DATA - Envia dados com JSON malformado");
                     System.out.println("                        ALL - Executa todos os testes (default)");
                     return;
                 }

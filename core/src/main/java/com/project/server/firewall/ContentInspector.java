@@ -42,36 +42,37 @@ public class ContentInspector {
     private static InspectionResult inspectSensorData(String content, String clientIp) {
         try {
             SensorData data = SensorData.fromJson(content);
+            String sensorId = data.getSensorId();
             
             // Verificar ranges (mesmos do AlertDetector)
             if (data.getTemperature() < -40 || data.getTemperature() > 60) {
-                logger.warn("Temperatura anomala de {}: {}", clientIp, data.getTemperature());
+                logger.warn("Temperatura anomala de {} (sensor {}): {}", clientIp, sensorId, data.getTemperature());
                 return InspectionResult.anomaly("ANOMALY", 
-                    String.format("Temperatura fora do range: %.2f", data.getTemperature()));
+                    String.format("Temperatura fora do range: %.2f", data.getTemperature()), sensorId);
             }
 
             if (data.getHumidity() < 0 || data.getHumidity() > 100) {
-                logger.warn("Umidade anomala de {}: {}", clientIp, data.getHumidity());
+                logger.warn("Umidade anomala de {} (sensor {}): {}", clientIp, sensorId, data.getHumidity());
                 return InspectionResult.anomaly("ANOMALY", 
-                    String.format("Umidade fora do range: %.2f", data.getHumidity()));
+                    String.format("Umidade fora do range: %.2f", data.getHumidity()), sensorId);
             }
 
             if (data.getCo2() < 200 || data.getCo2() > 5000) {
-                logger.warn("CO2 anomalo de {}: {}", clientIp, data.getCo2());
+                logger.warn("CO2 anomalo de {} (sensor {}): {}", clientIp, sensorId, data.getCo2());
                 return InspectionResult.anomaly("ANOMALY", 
-                    String.format("CO2 fora do range: %.2f", data.getCo2()));
+                    String.format("CO2 fora do range: %.2f", data.getCo2()), sensorId);
             }
 
             if (data.getPm25() < 0 || data.getPm25() > 500) {
-                logger.warn("PM2.5 anomalo de {}: {}", clientIp, data.getPm25());
+                logger.warn("PM2.5 anomalo de {} (sensor {}): {}", clientIp, sensorId, data.getPm25());
                 return InspectionResult.anomaly("ANOMALY", 
-                    String.format("PM2.5 fora do range: %.2f", data.getPm25()));
+                    String.format("PM2.5 fora do range: %.2f", data.getPm25()), sensorId);
             }
 
             if (data.getNoiseLevel() < 0 || data.getNoiseLevel() > 150) {
-                logger.warn("Ruido anomalo de {}: {}", clientIp, data.getNoiseLevel());
+                logger.warn("Ruido anomalo de {} (sensor {}): {}", clientIp, sensorId, data.getNoiseLevel());
                 return InspectionResult.anomaly("ANOMALY", 
-                    String.format("Ruido fora do range: %.2f", data.getNoiseLevel()));
+                    String.format("Ruido fora do range: %.2f", data.getNoiseLevel()), sensorId);
             }
 
             return InspectionResult.ok();
@@ -103,13 +104,17 @@ public class ContentInspector {
         return InspectionResult.ok();
     }
 
-    public record InspectionResult(boolean valid, String alertType, String reason) {
+    public record InspectionResult(boolean valid, String alertType, String reason, String sensorId) {
         public static InspectionResult ok() {
-            return new InspectionResult(true, null, null);
+            return new InspectionResult(true, null, null, null);
         }
 
         public static InspectionResult anomaly(String alertType, String reason) {
-            return new InspectionResult(false, alertType, reason);
+            return new InspectionResult(false, alertType, reason, null);
+        }
+
+        public static InspectionResult anomaly(String alertType, String reason, String sensorId) {
+            return new InspectionResult(false, alertType, reason, sensorId);
         }
     }
 }

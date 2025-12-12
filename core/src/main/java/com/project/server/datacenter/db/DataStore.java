@@ -63,24 +63,6 @@ public class DataStore {
         return alerts.subList(offset, end);
     }
 
-    public List<SensorReading> getBySensor(String sensorId) {
-        return readings.stream()
-                .filter(r -> r.sensorId().equals(sensorId))
-                .collect(Collectors.toList());
-    }
-
-    public List<SensorReading> getByTimeRange(long startMs, long endMs) {
-        return readings.stream()
-                .filter(r -> r.timestamp() >= startMs && r.timestamp() <= endMs)
-                .collect(Collectors.toList());
-    }
-
-    public List<SensorReading> getAlertsByType(String alertType) {
-        return readings.stream()
-                .filter(r -> r.isAlert() && alertType.equals(r.alertType()))
-                .collect(Collectors.toList());
-    }
-
     public int getCount() {
         return readings.size();
     }

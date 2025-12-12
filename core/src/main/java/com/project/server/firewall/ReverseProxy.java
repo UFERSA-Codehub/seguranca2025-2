@@ -23,9 +23,10 @@ public class ReverseProxy implements IServer {
     private static final int IDS_PORT = 3002;
 
     private static final Map<Integer, ServerTarget> TARGET_MAPPING = Map.of(
-        3001, new ServerTarget("localhost", 4001, "AUTH", false),
-        3011, new ServerTarget("localhost", 5000, "EDGE", false),
-        3021, new ServerTarget("localhost", 9090, "DATACENTER", true)
+        3001, new ServerTarget("localhost", 4001, "AUTH"),
+        3011, new ServerTarget("localhost", 5000, "EDGE"),
+        3021, new ServerTarget("localhost", 8080, "DATACENTER"),   // Edge batches (TCP)
+        3031, new ServerTarget("localhost", 9090, "DATACENTER")    // CLI client (TCP)
     );
 
     private final String name;
@@ -48,7 +49,7 @@ public class ReverseProxy implements IServer {
         try {
             this.keyManager = new KeyManager();
             this.idsClient = new IdsClient(name, keyManager, IDS_HOST, IDS_PORT);
-            this.threadPool = Executors.newCachedThreadPool();
+            this.threadPool = Executors.newFixedThreadPool(20);
             this.running = true;
         } catch (NoSuchAlgorithmException e) {
             logger.error("Erro ao inicializar KeyManager: {}", e.getMessage());
@@ -102,8 +103,7 @@ public class ReverseProxy implements IServer {
             target.host(),
             target.port(),
             target.serviceName(),
-            idsClient,
-            target.isHttp()
+            idsClient
         );
 
         threadPool.submit(handler);
@@ -165,5 +165,5 @@ public class ReverseProxy implements IServer {
         server.start();
     }
 
-    public record ServerTarget(String host, int port, String serviceName, boolean isHttp) {}
+    public record ServerTarget(String host, int port, String serviceName) {}
 }

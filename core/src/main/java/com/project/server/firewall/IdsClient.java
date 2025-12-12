@@ -12,8 +12,6 @@ import com.project.crypto.KeyManager;
 import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
 import com.project.network.SecureTCPChannel;
-import com.project.tracing.TraceEvent;
-import com.project.tracing.TracerFactory;
 
 public class IdsClient {
     private static final Logger logger = LoggerFactory.getLogger("Firewall.IdsClient");
@@ -46,6 +44,7 @@ public class IdsClient {
             socket = new Socket(idsHost, idsPort);
             socket.setSoTimeout(10000);
             channel = new SecureTCPChannel(firewallId, keyManager, socket);
+            channel.setTracePeerId("IDS");
 
             // Handshake
             MessageTCP hello = channel.buildHello();
@@ -78,6 +77,11 @@ public class IdsClient {
 
     public synchronized void sendAlert(String sourceIp, int sourcePort, String destService,
                                         String alertType, String content) {
+        sendAlert(sourceIp, sourcePort, destService, alertType, content, null);
+    }
+
+    public synchronized void sendAlert(String sourceIp, int sourcePort, String destService,
+                                        String alertType, String content, String sensorId) {
         if (!ensureConnected()) {
             logger.warn("Nao foi possivel enviar alerta - IDS indisponivel");
             return;
@@ -90,22 +94,17 @@ public class IdsClient {
             payload.addProperty("destService", destService);
             payload.addProperty("alertType", alertType);
             payload.addProperty("content", content);
+            if (sensorId != null) {
+                payload.addProperty("sensorId", sensorId);
+            }
 
             MessageTCP alertMsg = channel.buildEncrypted("IDS", MessageTypeTCP.ALERT, payload.toString());
             if (alertMsg != null) {
                 channel.send(alertMsg);
-                logger.info("Alerta [{}] enviado ao IDS: {} -> {}", alertType, sourceIp, destService);
+                String sensorInfo = sensorId != null ? " (sensor: " + sensorId + ")" : "";
+                logger.info("Alerta [{}] enviado ao IDS: {} -> {}{}", alertType, sourceIp, destService, sensorInfo);
 
-                TracerFactory.getTracer().trace(TraceEvent.create(
-                    firewallId,
-                    "TCP",
-                    "SEND",
-                    idsHost + ":" + idsPort,
-                    "ALERT",
-                    null,
-                    payload.toString(),
-                    "IDS"
-                ));
+                // Tracing feito apenas no RECEIVE (possui payload cifrado e decifrado)
 
                 // Aguardar ACK (com timeout curto)
                 socket.setSoTimeout(2000);

@@ -13,10 +13,23 @@ import org.slf4j.LoggerFactory;
 public class RuleEngine {
     private static final Logger logger = LoggerFactory.getLogger("Firewall.RuleEngine");
 
+    // Rate limit: max conexoes por segundo por IP:porta
     private static final int MAX_CONNECTIONS_PER_SECOND = 5;
     private static final long RATE_LIMIT_WINDOW_MS = 1000;
+
+    // Port scan: detecta IPs acessando multiplas portas
     private static final int PORT_SCAN_THRESHOLD = 3;
     private static final long PORT_SCAN_WINDOW_MS = 5000;
+
+    // Regras de filtro: politica "negar tudo exceto o permitido"
+    // Ordem importa: primeira regra que match eh aplicada
+    private static final List<FilterRule> FILTER_RULES = List.of(
+        new FilterRule(3000, true, "AuthServer"),
+        new FilterRule(3010, true, "Edge (sensores)"),
+        new FilterRule(3020, true, "Datacenter (Edge batches)"),
+        new FilterRule(3030, true, "Datacenter (CLI client)"),
+        new FilterRule(-1, false, "Negar tudo - politica default deny")                 // REGRA DEFAULT - deve ser a ultima
+    );
 
     private final Set<String> blacklist;
     private final Map<String, List<Long>> connectionTimestamps;
@@ -39,11 +52,6 @@ public class RuleEngine {
         logger.warn("IP adicionado a blacklist: {}", ip);
     }
 
-    public void removeFromBlacklist(String ip) {
-        blacklist.remove(ip);
-        logger.info("IP removido da blacklist: {}", ip);
-    }
-
     public Set<String> getBlacklist() {
         return new HashSet<>(blacklist);
     }
@@ -52,16 +60,8 @@ public class RuleEngine {
         long now = System.currentTimeMillis();
         String rateKey = ip + ":" + port;
 
-        // Registrar timestamp da conexao (por servico)
+        // Registrar timestamp da conexao (por IP:porta)
         connectionTimestamps.computeIfAbsent(rateKey, k -> new ArrayList<>()).add(now);
-
-        // Registrar porta acessada
-        long lastAccess = portAccessTimes.getOrDefault(ip, 0L);
-        if (now - lastAccess > PORT_SCAN_WINDOW_MS) {
-            portsAccessed.put(ip, new HashSet<>());
-        }
-        portsAccessed.computeIfAbsent(ip, k -> new HashSet<>()).add(port);
-        portAccessTimes.put(ip, now);
 
         // Limpar timestamps antigos periodicamente
         cleanOldTimestamps(rateKey);
@@ -85,22 +85,24 @@ public class RuleEngine {
         return false;
     }
 
-    public boolean isPortScanning(String ip) {
-        Set<Integer> ports = portsAccessed.getOrDefault(ip, Set.of());
+    public boolean isPortScanning(String ip, int port) {
+        long now = System.currentTimeMillis();
         Long lastAccess = portAccessTimes.get(ip);
 
-        if (lastAccess == null) {
-            return false;
+        // Se passou da janela de tempo, resetar contagem de portas
+        if (lastAccess == null || (now - lastAccess) > PORT_SCAN_WINDOW_MS) {
+            portsAccessed.put(ip, ConcurrentHashMap.newKeySet());
         }
 
-        long now = System.currentTimeMillis();
-        if (now - lastAccess > PORT_SCAN_WINDOW_MS) {
-            return false;
-        }
+        // Registrar porta acessada e timestamp
+        portsAccessed.computeIfAbsent(ip, k -> ConcurrentHashMap.newKeySet()).add(port);
+        portAccessTimes.put(ip, now);
 
-        if (ports.size() >= PORT_SCAN_THRESHOLD) {
-            logger.warn("Port scan detectado para IP {}: {} portas em {}ms", 
-                       ip, ports.size(), PORT_SCAN_WINDOW_MS);
+        // Verificar se acessou muitas portas diferentes
+        Set<Integer> ports = portsAccessed.get(ip);
+        if (ports != null && ports.size() >= PORT_SCAN_THRESHOLD) {
+            logger.warn("Port scan detectado de {} - {} portas acessadas em {}ms: {}",
+                    ip, ports.size(), PORT_SCAN_WINDOW_MS, ports);
             return true;
         }
 
@@ -113,18 +115,25 @@ public class RuleEngine {
             return new CheckResult(false, "BLOCKED", "IP na blacklist");
         }
 
-        // Passo 2 - Registrar conexao
-        recordConnection(ip, port);
-
-        // Passo 3 - Verificar rate limit
-        if (isRateLimitExceeded(ip, port)) {
-            return new CheckResult(false, "RATE_LIMIT", "Limite de conexoes excedido");
+        // Passo 2 - Verificar regra de filtro (politica default deny)
+        FilterRule rule = matchRule(port);
+        if (!rule.allow()) {
+            logger.warn("Conexao negada para porta {} - Regra: {}", port, rule.description());
+            return new CheckResult(false, "DENIED", "Regra: " + rule.description());
         }
 
-        // Passo 4 - Verificar port scan
-        if (isPortScanning(ip)) {
+        // Passo 3 - Verificar port scan (antes de registrar conexao)
+        if (isPortScanning(ip, port)) {
             addToBlacklist(ip);
             return new CheckResult(false, "PORT_SCAN", "Port scan detectado");
+        }
+
+        // Passo 4 - Registrar conexao
+        recordConnection(ip, port);
+
+        // Passo 5 - Verificar rate limit
+        if (isRateLimitExceeded(ip, port)) {
+            return new CheckResult(false, "RATE_LIMIT", "Limite de conexoes excedido");
         }
 
         return new CheckResult(true, null, null);
@@ -138,5 +147,21 @@ public class RuleEngine {
         }
     }
 
+    /**
+     * Busca a primeira regra que faz match com a porta de destino.
+     * Se nenhuma regra especifica fizer match, retorna a regra default (destPort = -1).
+     */
+    public FilterRule matchRule(int destPort) {
+        for (FilterRule rule : FILTER_RULES) {
+            if (rule.destPort() == -1 || rule.destPort() == destPort) {
+                return rule;
+            }
+        }
+        // Nunca deve chegar aqui se a regra default existir
+        return new FilterRule(-1, false, "Negar - nenhuma regra match");
+    }
+
     public record CheckResult(boolean allowed, String alertType, String reason) {}
+
+    public record FilterRule(int destPort, boolean allow, String description) {}
 }

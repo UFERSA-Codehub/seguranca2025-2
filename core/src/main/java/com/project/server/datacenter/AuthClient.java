@@ -36,12 +36,6 @@ public class AuthClient {
         this.connected = false;
     }
 
-    public void setAuthServer(String host, int port) {
-        this.authHost = host;
-        this.authPort = port;
-        logger.info("AuthServer configurado: {}:{}", host, port);
-    }
-
     public boolean hasAuthServer() {
         return authHost != null && authPort > 0;
     }
@@ -64,6 +58,7 @@ public class AuthClient {
             socket.setSoTimeout(10_000);
             KeyManager keyManager = new KeyManager();
             this.channel = new SecureTCPChannel(datacenterId, keyManager, socket);
+            channel.setTracePeerId("AUTH");
 
             // Passo 1 - Enviar HELLO
             channel.send(channel.buildHello());
