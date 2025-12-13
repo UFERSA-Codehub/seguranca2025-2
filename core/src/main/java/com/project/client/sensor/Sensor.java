@@ -24,6 +24,7 @@ public class Sensor {
     private SecureUDPChannel udpChannel;
     private UdpClient udpClient;
     private TcpClient tcpClient;
+    private SensorDataGenerator dataGenerator;
     private String jwtToken;
     private volatile boolean running;
 
@@ -51,6 +52,7 @@ public class Sensor {
 
         this.udpClient = new UdpClient(sensorId, udpChannel, discoveryHost, discoveryPort);
         this.tcpClient = new TcpClient(sensorId, keyManager);
+        this.dataGenerator = new SensorDataGenerator(sensorId);
 
         try {
             if (!udpClient.handshakeWithDiscovery()) { 
@@ -96,7 +98,7 @@ public class Sensor {
         long durationMs = 5 * 60 * 1000;
         while (running && (System.currentTimeMillis() - startTime) < durationMs) {
             try {
-                SensorData data = SensorData.generateRandom(sensorId);
+                SensorData data = dataGenerator.generate();
                 logger.info("[Sensor {}] {}", sensorId, data);
                 if (!tcpClient.sendData(data.toJson(), jwtToken)) {
                     logger.warn("[Sensor {}] Falha ao enviar dados - reconectando...", sensorId);
@@ -105,7 +107,7 @@ public class Sensor {
                         break;
                     }
                 }
-                Thread.sleep(2000 + (int)(Math.random() * 1000));
+                Thread.sleep(5000 + (int)(Math.random() * 3000));
             } catch (InterruptedException e) {
                 break;
             }

@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 import com.project.auth.JWT;
 import com.project.crypto.KeyManager;
 import com.project.network.SecureUDPChannel;
+import com.project.server.ConnectionGuard;
 import com.project.server.IServer;
 
 public class ServerAuth implements IServer {
@@ -39,6 +40,7 @@ public class ServerAuth implements IServer {
     private SecureUDPChannel discoveryChannel;
     private JWT jwt;
     private CredentialStore credentials;
+    private ConnectionGuard connectionGuard;
 
     public ServerAuth(int port, String discoveryHost, int discoveryPort) {
         this.name = "AUTH";
@@ -59,6 +61,9 @@ public class ServerAuth implements IServer {
             this.scheduler = Executors.newScheduledThreadPool(1);
             this.jwt = new JWT(JWT_SECRET, JWT_ISSUER);
             this.credentials = new CredentialStore();
+            // Apenas ReverseProxy e localhost podem conectar
+            // Em produção, substituir pelo IP real do ReverseProxy
+            this.connectionGuard = new ConnectionGuard(name);
             this.running = true;
         } catch (NoSuchAlgorithmException e) {
             logger.error("Erro ao inicializar KeyManager: {}", e.getMessage());
@@ -77,6 +82,13 @@ public class ServerAuth implements IServer {
         while (running) {
             try {
                 Socket clientSocket = serverSocket.accept();
+                
+                // Verificar se IP está na whitelist (apenas ReverseProxy e localhost)
+                if (!connectionGuard.isConnectionAllowed(clientSocket)) {
+                    clientSocket.close();
+                    continue;
+                }
+                
                 logger.info("Conexão aceita de {}", clientSocket.getRemoteSocketAddress());
                 threadPool.submit(new TcpHandler(clientSocket, keyManager, jwt, credentials));
             } catch (IOException e) {
@@ -183,7 +195,7 @@ public class ServerAuth implements IServer {
     public static void main(String[] args) {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 4001;
         String discoveryHost = args.length > 1 ? args[1] : "localhost";
-        int discoveryPort = args.length > 2 ? Integer.parseInt(args[2]) : 4000;
+        int discoveryPort = args.length > 2 ? Integer.parseInt(args[2]) : 3041;
 
         ServerAuth server = new ServerAuth(port, discoveryHost, discoveryPort);
         Runtime.getRuntime().addShutdownHook(new Thread(server::stop));

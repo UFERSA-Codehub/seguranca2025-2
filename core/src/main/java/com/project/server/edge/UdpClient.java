@@ -39,6 +39,7 @@ public class UdpClient {
     public boolean handshake() {
         String peerInfo = discoveryHost + ":" + discoveryPort;
 
+        channel.setTracePeerId("DISCOVERY");
         channel.send(channel.buildHello(), discoveryHost, discoveryPort);
         logger.debug("HELLO enviado para DISCOVERY ({})", peerInfo);
 
@@ -128,44 +129,57 @@ public class UdpClient {
         channel.send(lookMsg, discoveryHost, discoveryPort);
         logger.debug("LOOK_DATACENTER enviado para DISCOVERY");
 
-        // Receber resposta (envelope cifrado)
-        ReceivedPacket packet = channel.receive();
-        if (packet == null) {
-            logger.error("Timeout aguardando resposta de DISCOVERY ({})", peerInfo);
-            return null;
+        // Receber resposta (envelope cifrado) - com retry para ignorar mensagens inesperadas
+        // (ex: HEARTBEAT_OK de heartbeats anteriores)
+        int maxRetries = 3;
+        for (int retry = 0; retry < maxRetries; retry++) {
+            ReceivedPacket packet = channel.receive();
+            if (packet == null) {
+                logger.error("Timeout aguardando resposta de DISCOVERY ({})", peerInfo);
+                return null;
+            }
+
+            MessageUDP response = packet.message();
+            if (response == null) {
+                logger.error("Resposta nula de DISCOVERY ({})", peerInfo);
+                return null;
+            }
+
+            // Verificar e decifrar envelope
+            if (!channel.verify(response)) {
+                logger.error("Falha ao verificar resposta de DISCOVERY ({})", peerInfo);
+                return null;
+            }
+
+            EnvelopeUDP envelope = channel.decryptEnvelope("DISCOVERY", response);
+            if (envelope == null) {
+                logger.error("Falha ao decifrar envelope de DISCOVERY ({})", peerInfo);
+                return null;
+            }
+
+            // Ignorar HEARTBEAT_OK (pode chegar de heartbeats anteriores)
+            if (envelope.getType() == MessageTypeUDP.HEARTBEAT_OK) {
+                logger.debug("Ignorando HEARTBEAT_OK durante discoverDatacenter (tentativa {})", retry + 1);
+                continue;
+            }
+
+            if (envelope.getType() == MessageTypeUDP.NOT_FOUND) {
+                logger.warn("Nenhum Datacenter disponível no momento");
+                return null;
+            }
+
+            if (envelope.getType() != MessageTypeUDP.FOUND_DATACENTER) {
+                logger.error("Resposta inesperada de DISCOVERY ({}): {}", peerInfo, envelope.getType());
+                return null;
+            }
+
+            String payload = envelope.getPayload();
+            logger.info("Datacenter descoberto: {}", payload);
+            return payload;
         }
 
-        MessageUDP response = packet.message();
-        if (response == null) {
-            logger.error("Resposta nula de DISCOVERY ({})", peerInfo);
-            return null;
-        }
-
-        // Verificar e decifrar envelope
-        if (!channel.verify(response)) {
-            logger.error("Falha ao verificar resposta de DISCOVERY ({})", peerInfo);
-            return null;
-        }
-
-        EnvelopeUDP envelope = channel.decryptEnvelope("DISCOVERY", response);
-        if (envelope == null) {
-            logger.error("Falha ao decifrar envelope de DISCOVERY ({})", peerInfo);
-            return null;
-        }
-
-        if (envelope.getType() == MessageTypeUDP.NOT_FOUND) {
-            logger.warn("Nenhum Datacenter disponível no momento");
-            return null;
-        }
-
-        if (envelope.getType() != MessageTypeUDP.FOUND_DATACENTER) {
-            logger.error("Resposta inesperada de DISCOVERY ({}): {}", peerInfo, envelope.getType());
-            return null;
-        }
-
-        String payload = envelope.getPayload();
-        logger.info("Datacenter descoberto: {}", payload);
-        return payload;
+        logger.error("Máximo de retries alcançado aguardando FOUND_DATACENTER de DISCOVERY ({})", peerInfo);
+        return null;
     }
 
     public void startHeartbeatScheduler() {

@@ -64,8 +64,4 @@ public class HMAC {
         }
         return result == 0;
     }
-
-    public SecretKey getKey() {
-        return key;
-    }
 }

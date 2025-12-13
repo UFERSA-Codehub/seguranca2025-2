@@ -39,6 +39,8 @@ public class TcpClient {
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
 
             this.authChannel = new SecureTCPChannel(sensorId, keyManager, socket);
+            // Trace shows PACKET_FILTER as peer since firewall intercepts the connection
+            authChannel.setTracePeerId("PACKET_FILTER");
 
             if (!performHandshake(authChannel, "AUTH")) {
                 logger.error("[Sensor {}] Falha no handshake com AuthServer", sensorId);
@@ -104,6 +106,8 @@ public class TcpClient {
             socket.setSoTimeout(SOCKET_TIMEOUT_MS);
 
             this.edgeChannel = new SecureTCPChannel(sensorId, keyManager, socket);
+            // Trace shows PACKET_FILTER as peer since firewall intercepts the connection
+            edgeChannel.setTracePeerId("PACKET_FILTER");
 
             if (!performHandshake(edgeChannel, "EDGE")) {
                 logger.error("[Sensor {}] Falha no handshake com Edge", sensorId);
@@ -194,9 +198,5 @@ public class TcpClient {
             edgeChannel.close();
             edgeChannel = null;
         }
-    }
-
-    public boolean isConnectedToEdge() {
-        return edgeChannel != null && !edgeChannel.getSocket().isClosed();
     }
 }

@@ -43,9 +43,13 @@ public class ProxySession {
             // Criar KeyManager proprio
             this.sessionKeyManager = new KeyManager();
             
-            // Passo 1 - Criar canal com cliente (se passando pelo serviço interno)
-            // Usamos o serviceName para que o cliente pense estar falando com AUTH/EDGE/etc
+            // Passo 1 - Criar canal com cliente (impersonando o serviço interno)
+            // entityId = serviceName para que o cliente receba CHALLENGE com senderId correto (ex: AUTH)
+            // traceEntityId = REVERSE_PROXY para que o tracing mostre corretamente quem esta processando
             clientChannel = new SecureTCPChannel(serviceName.toUpperCase(), sessionKeyManager, clientSocket);
+            clientChannel.setTraceEntityId("REVERSE_PROXY");
+            // Definir tracePeerId para clientChannel - comunica com PacketFilter/cliente externo
+            clientChannel.setTracePeerId("PACKET_FILTER");
 
             // Passo 2 - Receber HELLO do cliente
             MessageTCP clientHello = clientChannel.receive();
@@ -56,7 +60,7 @@ public class ProxySession {
             }
             clientId = clientHello.getSenderId();
             proxySessionId = "RP-" + clientId;
-            logger.debug("Recebido HELLO de {} (sessao: {})", clientId, proxySessionId);
+            logger.info("Recebido HELLO de {} (sessao: {})", clientId, proxySessionId);
 
             // Passo 3 - Responder CHALLENGE ao cliente (impersonando o servico)
             MessageTCP challengeToClient = clientChannel.handleHello(clientHello);
@@ -65,15 +69,20 @@ public class ProxySession {
                 return false;
             }
             clientChannel.send(challengeToClient);
-            logger.debug("CHALLENGE enviado para {} (como {})", clientId, serviceName.toUpperCase());
+            logger.info("CHALLENGE enviado para {} (como {})", clientId, serviceName.toUpperCase());
 
-            // Passo 4 - Criar canal com servidor interno (usando ID unico para evitar colisao de chaves)
+            // Passo 4 - Criar canal com servidor interno
+            // Usar proxySessionId (RP-<clientId>) para identificar unicamente esta sessao
+            // Isso evita colisao de chaves quando multiplos clientes conectam simultaneamente
             serverChannel = new SecureTCPChannel(proxySessionId, sessionKeyManager, serverSocket);
+            serverChannel.setTraceEntityId("REVERSE_PROXY");
+            // Definir tracePeerId para o servidor com quem estamos comunicando
+            serverChannel.setTracePeerId(serviceName.toUpperCase());
 
             // Passo 5 - Enviar HELLO ao servidor (proxy atua como cliente)
             MessageTCP helloToServer = serverChannel.buildHello();
             serverChannel.send(helloToServer);
-            logger.debug("HELLO enviado para {}", serviceName);
+            logger.info("HELLO enviado para {}", serviceName);
 
             // Passo 6 - Receber CHALLENGE do servidor
             MessageTCP serverChallenge = serverChannel.receive();
@@ -89,7 +98,7 @@ public class ProxySession {
                 logger.error("Falha ao processar CHALLENGE do servidor");
                 return false;
             }
-            logger.debug("Sessao estabelecida com {}", serverId);
+            logger.info("Sessao estabelecida com {}", serverId);
 
             established = true;
             logger.info("ProxySession estabelecida: {} <-> Proxy ({}) <-> {}", clientId, serviceName, serverId);

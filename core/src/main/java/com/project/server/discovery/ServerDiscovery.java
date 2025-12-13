@@ -11,6 +11,7 @@ import com.project.crypto.KeyManager;
 import com.project.network.SecureUDPChannel;
 import com.project.network.SecureUDPChannel.ReceivedPacket;
 import com.project.server.IServer;
+import com.project.tracing.TracerFactory;
 
 public class ServerDiscovery implements IServer {
     private static final Logger logger = LoggerFactory.getLogger("Discovery");
@@ -32,6 +33,7 @@ public class ServerDiscovery implements IServer {
     @Override
     public void start() {
         logger.info("[Discovery] Iniciando na porta {}...", port);
+        logger.info("[Discovery] Tracing habilitado: {}", TracerFactory.isEnabled());
         
         try {
             KeyManager keyManager = new KeyManager();

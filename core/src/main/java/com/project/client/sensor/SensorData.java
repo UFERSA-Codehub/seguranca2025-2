@@ -28,6 +28,23 @@ public class SensorData {
 
     public SensorData() {}
 
+    SensorData(String sensorId, String timestamp, double co2, double co, double no2, double so2,
+               double pm25, double pm10, double temperature, double humidity,
+               double noiseLevel, double uvIndex) {
+        this.sensorId = sensorId;
+        this.timestamp = timestamp;
+        this.co2 = co2;
+        this.co = co;
+        this.no2 = no2;
+        this.so2 = so2;
+        this.pm25 = pm25;
+        this.pm10 = pm10;
+        this.temperature = temperature;
+        this.humidity = humidity;
+        this.noiseLevel = noiseLevel;
+        this.uvIndex = uvIndex;
+    }
+
     public static SensorData generateRandom(String sensorId) {
         ThreadLocalRandom rand = ThreadLocalRandom.current();
         

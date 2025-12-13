@@ -36,6 +36,7 @@ public class UdpClient {
     public boolean handshakeWithDiscovery() {
         logger.debug("[Sensor {}] Handshake com Discovery ({}:{})...", sensorId, discoveryHost, discoveryPort);
 
+        channel.setTracePeerId("DISCOVERY");
         channel.send(channel.buildHello(), discoveryHost, discoveryPort);
 
         ReceivedPacket packet = channel.receive();
@@ -60,6 +61,7 @@ public class UdpClient {
     public boolean discoverServices() {
         logger.info("[Sensor {}] Buscando servicos (Edge + AuthServer)...", sensorId);
 
+        channel.setTracePeerId("DISCOVERY");
         MessageUDP lookEdge = channel.buildEncryptedEnvelope("DISCOVERY", MessageTypeUDP.LOOK_EDGE, "");
         if (lookEdge == null) {
             logger.error("[Sensor {}] Falha ao construir mensagem LOOK_EDGE", sensorId);

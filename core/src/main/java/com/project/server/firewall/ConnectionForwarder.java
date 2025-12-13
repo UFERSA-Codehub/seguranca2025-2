@@ -33,11 +33,11 @@ public class ConnectionForwarder implements Runnable {
     public void run() {
         logger.debug("Iniciando forwarding {} -> {}", clientIp, destService);
 
-        Thread clientToServer = new Thread(() -> forward(clientSocket, serverSocket, "client->server"));
-        Thread serverToClient = new Thread(() -> forward(serverSocket, clientSocket, "server->client"));
-
-        clientToServer.start();
-        serverToClient.start();
+        // Usar virtual threads (Java 21) para I/O-bound forwarding - mais eficiente que platform threads
+        Thread clientToServer = Thread.ofVirtual().name("fwd-c2s-" + clientIp).start(
+            () -> forward(clientSocket, serverSocket, "client->server"));
+        Thread serverToClient = Thread.ofVirtual().name("fwd-s2c-" + clientIp).start(
+            () -> forward(serverSocket, clientSocket, "server->client"));
 
         try {
             clientToServer.join();

@@ -14,12 +14,14 @@ import com.project.message.tcp.MessageTCP;
 import com.project.message.tcp.MessageTypeTCP;
 import com.project.network.SecureTCPChannel;
 import com.project.server.ids.AlertStore.Alert;
+import com.project.tracing.TraceEvent;
+import com.project.tracing.TracerFactory;
 
 public class TcpHandler implements Runnable {
     private static final Logger logger = LoggerFactory.getLogger("IDS.TcpHandler");
     private static final Gson gson = new Gson();
 
-    private static final int ANOMALY_THRESHOLD = 2;
+    private static final int ANOMALY_THRESHOLD = 1;
     private static final long ANOMALY_WINDOW_MS = 60_000;
 
     private final Socket clientSocket;
@@ -49,21 +51,23 @@ public class TcpHandler implements Runnable {
                 return;
             }
 
+            String peerId = hello.getSenderId();
+            // Definir tracePeerId logo apos saber o peerId, antes de enviar qualquer resposta
+            channel.setTracePeerId(peerId);
+
             MessageTCP challenge = channel.handleHello(hello);
             if (challenge == null) {
                 logger.error("Falha ao processar HELLO");
                 return;
             }
             channel.send(challenge);
-
-        String peerId = hello.getSenderId();
-            logger.debug("Handshake concluído com {}", peerId);
+            logger.info("Handshake concluído com {}", peerId);
 
             // Loop de recebimento de alertas
             while (!clientSocket.isClosed()) {
                 MessageTCP message = channel.receive();
                 if (message == null) {
-                    logger.debug("Conexao fechada por {}", peerId);
+                    logger.info("Conexao fechada por {}", peerId);
                     break;
                 }
 
@@ -107,6 +111,18 @@ public class TcpHandler implements Runnable {
 
     private void handleAlert(SecureTCPChannel channel, String peerId, String payload) {
         try {
+            TracerFactory.getTracer().trace(TraceEvent.create(
+                "IDS",
+                "TCP",
+                "RECEIVE",
+                clientSocket.getRemoteSocketAddress().toString(),
+                null,
+                "ALERT",
+                null,
+                payload,
+                peerId
+            ));
+
             JsonObject alertData = gson.fromJson(payload, JsonObject.class);
 
             String sourceIp = alertData.get("sourceIp").getAsString();
@@ -114,11 +130,13 @@ public class TcpHandler implements Runnable {
             String destService = alertData.get("destService").getAsString();
             String alertType = alertData.get("alertType").getAsString();
             String content = alertData.has("content") ? alertData.get("content").getAsString() : "";
+            String sensorId = alertData.has("sensorId") ? alertData.get("sensorId").getAsString() : null;
 
-            Alert alert = Alert.of(sourceIp, sourcePort, destService, alertType, content);
+            Alert alert = Alert.of(sourceIp, sourcePort, destService, alertType, content, sensorId);
             alertStore.store(alert);
 
-            logger.warn("ALERTA [{}] de {} para {}: {}", alertType, sourceIp, destService, content);
+            String sensorInfo = sensorId != null ? " (sensor: " + sensorId + ")" : "";
+            logger.warn("ALERTA [{}] de {} para {}{}: {}", alertType, sourceIp, destService, sensorInfo, content);
 
             // Enviar ACK
             MessageTCP ack = channel.buildEncrypted(peerId, MessageTypeTCP.ALERT_ACK, "{\"status\":\"received\"}");
@@ -127,9 +145,14 @@ public class TcpHandler implements Runnable {
             }
 
             // Verificar se deve disparar TERMINATE
-            if (shouldTerminate(sourceIp, alertType)) {
-                logger.warn("IP {} excedeu limite de alertas - enviando TERMINATE para Edge", sourceIp);
-                serverIDS.sendTerminateToEdge(sourceIp);
+            if (shouldTerminate(sourceIp, sensorId, alertType)) {
+                if (sensorId != null) {
+                    logger.warn("Sensor '{}' excedeu limite de alertas - enviando TERMINATE para Edge", sensorId);
+                    serverIDS.sendTerminateToEdge(sourceIp, sensorId);
+                } else {
+                    logger.warn("IP {} excedeu limite de alertas - enviando TERMINATE para Edge", sourceIp);
+                    serverIDS.sendTerminateToEdge(sourceIp, null);
+                }
             }
 
         } catch (Exception e) {
@@ -137,13 +160,19 @@ public class TcpHandler implements Runnable {
         }
     }
 
-    private boolean shouldTerminate(String sourceIp, String alertType) {
+    private boolean shouldTerminate(String sourceIp, String sensorId, String alertType) {
         if ("BLOCKED".equals(alertType) || "PORT_SCAN".equals(alertType)) {
             return true;
         }
 
         if ("ANOMALY".equals(alertType) || "RATE_LIMIT".equals(alertType)) {
-            int recentAlerts = alertStore.countByIp(sourceIp, ANOMALY_WINDOW_MS);
+            // Preferir contar por sensor ID se disponível
+            int recentAlerts;
+            if (sensorId != null) {
+                recentAlerts = alertStore.countBySensorId(sensorId, ANOMALY_WINDOW_MS);
+            } else {
+                recentAlerts = alertStore.countByIp(sourceIp, ANOMALY_WINDOW_MS);
+            }
             return recentAlerts >= ANOMALY_THRESHOLD;
         }
 

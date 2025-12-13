@@ -8,6 +8,7 @@ import java.net.SocketException;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import com.project.auth.JWT;
 import com.project.crypto.KeyManager;
 import com.project.network.SecureUDPChannel;
+import com.project.server.ConnectionGuard;
 import com.project.server.IServer;
 import com.project.server.auth.ServerAuth;
 import com.project.server.edge.data.Cache;
@@ -42,9 +44,14 @@ public class ServerEdge implements IServer {
     private ExecutorService idsThreadPool;
     private JWT jwt;
     private Cache cache;
+    private ConnectionGuard connectionGuard;
+    private ConnectionGuard idsConnectionGuard;
     
     // Registro de conexões ativas por IP (para TERMINATE do IDS)
     private final Map<String, SensorTcpHandler> activeConnections = new ConcurrentHashMap<>();
+    
+    // Blacklist de sensores (por sensor ID) - sensores bloqueados pelo IDS
+    private final Set<String> sensorBlacklist = ConcurrentHashMap.newKeySet();
     
     // Cliente UDP para Discovery
     private UdpClient udpClient;
@@ -83,6 +90,10 @@ public class ServerEdge implements IServer {
             this.jwt = new JWT(ServerAuth.JWT_SECRET, "AuthServer");
             this.cache = new Cache();
             this.scheduler = Executors.newScheduledThreadPool(2);
+            // ConnectionGuard: apenas ReverseProxy (localhost) pode conectar para dados de sensores
+            this.connectionGuard = new ConnectionGuard(name + "-Sensors");
+            // IDS pode conectar de localhost
+            this.idsConnectionGuard = new ConnectionGuard(name + "-IDS");
             this.running = true;
         } catch (NoSuchAlgorithmException e) {
             logger.error("Erro ao inicializar KeyManager: {}", e.getMessage());
@@ -139,6 +150,13 @@ public class ServerEdge implements IServer {
         while (running) {
             try {
                 Socket clientSocket = tcpServerSocket.accept();
+                
+                // Verificar se IP está na whitelist (apenas ReverseProxy e localhost)
+                if (!connectionGuard.isConnectionAllowed(clientSocket)) {
+                    clientSocket.close();
+                    continue;
+                }
+                
                 String clientIp = extractIp(clientSocket);
                 logger.info("Nova conexão de sensor: {}", clientSocket.getRemoteSocketAddress());
                 SensorTcpHandler handler = new SensorTcpHandler(clientSocket, keyManager, jwt, cache, this);
@@ -158,6 +176,13 @@ public class ServerEdge implements IServer {
             while (running) {
                 try {
                     Socket idsSocket = idsServerSocket.accept();
+                    
+                    // Verificar se IP está na whitelist (apenas IDS de localhost)
+                    if (!idsConnectionGuard.isConnectionAllowed(idsSocket)) {
+                        idsSocket.close();
+                        continue;
+                    }
+                    
                     logger.info("Conexão do IDS recebida: {}", idsSocket.getRemoteSocketAddress());
                     idsThreadPool.submit(new IdsCommandHandler(idsSocket, keyManager, this));
                 } catch (IOException e) {
@@ -179,6 +204,52 @@ public class ServerEdge implements IServer {
         }
     }
 
+    /**
+     * Termina conexão e adiciona sensor à blacklist por sensor ID.
+     * Usado quando IDS identifica um sensor malicioso pelo ID (não pelo IP).
+     */
+    public void terminateBySensorId(String sensorId) {
+        // Adicionar à blacklist primeiro
+        blacklistSensor(sensorId);
+        
+        // Procurar e fechar conexão ativa deste sensor
+        for (Map.Entry<String, SensorTcpHandler> entry : activeConnections.entrySet()) {
+            SensorTcpHandler handler = entry.getValue();
+            if (sensorId.equals(handler.getPeerId())) {
+                logger.warn("Terminando conexão de sensor malicioso: {}", sensorId);
+                activeConnections.remove(entry.getKey());
+                handler.forceClose();
+                return;
+            }
+        }
+        logger.debug("Sensor {} não encontrado nas conexões ativas (já pode ter desconectado)", sensorId);
+    }
+
+    /**
+     * Adiciona um sensor à blacklist. Dados deste sensor serão rejeitados.
+     */
+    public void blacklistSensor(String sensorId) {
+        if (sensorBlacklist.add(sensorId)) {
+            logger.warn("Sensor '{}' adicionado à blacklist", sensorId);
+        }
+    }
+
+    /**
+     * Verifica se um sensor está na blacklist.
+     */
+    public boolean isSensorBlacklisted(String sensorId) {
+        return sensorBlacklist.contains(sensorId);
+    }
+
+    /**
+     * Remove um sensor da blacklist.
+     */
+    public void unblacklistSensor(String sensorId) {
+        if (sensorBlacklist.remove(sensorId)) {
+            logger.info("Sensor '{}' removido da blacklist", sensorId);
+        }
+    }
+
     public void unregisterConnection(String ip) {
         activeConnections.remove(ip);
         logger.debug("Conexão removida do registro: {}", ip);
@@ -194,20 +265,6 @@ public class ServerEdge implements IServer {
             return address.substring(0, colonIndex);
         }
         return address;
-    }
-
-    private void performReRegister() {
-        if (!udpClient.handshake()) {
-            logger.error("Falha no re-handshake com Discovery");
-            return;
-        }
-
-        if (!udpClient.register(port)) {
-            logger.error("Falha no re-registro com Discovery");
-            return;
-        }
-
-        logger.info("Re-registro com Discovery concluido com sucesso");
     }
 
     private void startCacheFlushScheduler() {
@@ -234,6 +291,22 @@ public class ServerEdge implements IServer {
 
         List<Cache.CacheEntry> entries = cache.flush();
         if (entries.isEmpty()) {
+            return;
+        }
+
+        // Passo 2 - Filtrar dados de sensores na blacklist (defesa em profundidade)
+        int originalCount = entries.size();
+        entries = entries.stream()
+            .filter(e -> !sensorBlacklist.contains(e.sensorId()))
+            .toList();
+        
+        int filteredCount = originalCount - entries.size();
+        if (filteredCount > 0) {
+            logger.warn("Filtrados {} registros de sensores na blacklist", filteredCount);
+        }
+
+        if (entries.isEmpty()) {
+            logger.debug("Todos os registros eram de sensores na blacklist - nada a enviar");
             return;
         }
 
@@ -374,7 +447,7 @@ public class ServerEdge implements IServer {
     public static void main(String[] args) {
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 5000;
         String discoveryHost = args.length > 1 ? args[1] : "localhost";
-        int discoveryPort = args.length > 2 ? Integer.parseInt(args[2]) : 4000;
+        int discoveryPort = args.length > 2 ? Integer.parseInt(args[2]) : 3041;
         
         ServerEdge server = new ServerEdge(port, discoveryHost, discoveryPort);
         Runtime.getRuntime().addShutdownHook(new Thread(server::stop));

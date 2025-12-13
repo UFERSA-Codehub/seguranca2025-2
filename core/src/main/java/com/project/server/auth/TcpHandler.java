@@ -68,6 +68,9 @@ public class TcpHandler implements Runnable {
         }
 
         this.peerId = hello.getSenderId();
+        // Definir tracePeerId logo apos saber o peerId, antes de enviar qualquer resposta
+        // Usa REVERSE_PROXY pois e com quem Auth realmente se comunica (via firewall)
+        channel.setTracePeerId("REVERSE_PROXY");
         logger.info("HELLO recebido de {}", peerId);
 
         MessageTCP challenge = channel.handleHello(hello);

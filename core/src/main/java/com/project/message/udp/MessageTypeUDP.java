@@ -26,6 +26,7 @@ public enum MessageTypeUDP {
     REGISTER_FAIL,          // Resposta de falha no registro
 
     HEARTBEAT,              // Heartbeat periódico (Edge/Datacenter -> Discovery)
+    HEARTBEAT_OK,           // Resposta de heartbeat bem-sucedido
     RE_REGISTER;            // Sinal do Discovery para serviço re-registrar (após restart)
 
 }

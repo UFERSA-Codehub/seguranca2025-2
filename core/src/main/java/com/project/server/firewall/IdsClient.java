@@ -38,12 +38,13 @@ public class IdsClient {
             return true;
         }
 
-        logger.debug("Conectando ao IDS em {}:{}...", idsHost, idsPort);
+        logger.info("Conectando ao IDS em {}:{}...", idsHost, idsPort);
 
         try {
             socket = new Socket(idsHost, idsPort);
             socket.setSoTimeout(10000);
             channel = new SecureTCPChannel(firewallId, keyManager, socket);
+            channel.setTracePeerId("IDS");
 
             // Handshake
             MessageTCP hello = channel.buildHello();
@@ -64,7 +65,7 @@ public class IdsClient {
             }
 
             connected = true;
-            logger.debug("Conectado ao IDS com sucesso");
+            logger.info("Conectado ao IDS com sucesso");
             return true;
 
         } catch (IOException e) {
@@ -76,6 +77,11 @@ public class IdsClient {
 
     public synchronized void sendAlert(String sourceIp, int sourcePort, String destService,
                                         String alertType, String content) {
+        sendAlert(sourceIp, sourcePort, destService, alertType, content, null);
+    }
+
+    public synchronized void sendAlert(String sourceIp, int sourcePort, String destService,
+                                        String alertType, String content, String sensorId) {
         if (!ensureConnected()) {
             logger.warn("Nao foi possivel enviar alerta - IDS indisponivel");
             return;
@@ -88,17 +94,23 @@ public class IdsClient {
             payload.addProperty("destService", destService);
             payload.addProperty("alertType", alertType);
             payload.addProperty("content", content);
+            if (sensorId != null) {
+                payload.addProperty("sensorId", sensorId);
+            }
 
             MessageTCP alertMsg = channel.buildEncrypted("IDS", MessageTypeTCP.ALERT, payload.toString());
             if (alertMsg != null) {
                 channel.send(alertMsg);
-                logger.info("Alerta [{}] enviado ao IDS: {} -> {}", alertType, sourceIp, destService);
+                String sensorInfo = sensorId != null ? " (sensor: " + sensorId + ")" : "";
+                logger.info("Alerta [{}] enviado ao IDS: {} -> {}{}", alertType, sourceIp, destService, sensorInfo);
+
+                // Tracing feito apenas no RECEIVE (possui payload cifrado e decifrado)
 
                 // Aguardar ACK (com timeout curto)
                 socket.setSoTimeout(2000);
                 MessageTCP ack = channel.receive();
                 if (ack != null) {
-                    logger.debug("ACK recebido do IDS");
+                    logger.info("ACK recebido do IDS");
                 }
                 socket.setSoTimeout(10000);
             }

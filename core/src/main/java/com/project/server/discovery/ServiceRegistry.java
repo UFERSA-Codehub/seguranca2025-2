@@ -26,7 +26,11 @@ public class ServiceRegistry {
     private static final String PACKET_FILTER_HOST = "localhost";
     private static final int PACKET_FILTER_AUTH_PORT = 3000;
     private static final int PACKET_FILTER_EDGE_PORT = 3010;
-    private static final int PACKET_FILTER_DATACENTER_PORT = 3020;
+    private static final int PACKET_FILTER_DATACENTER_CLI_PORT = 3030;
+
+    // Configuracao do ReverseProxy (interno)
+    private static final String REVERSE_PROXY_HOST = "localhost";
+    private static final int REVERSE_PROXY_DATACENTER_EDGE_PORT = 3022;
 
     // Flag para habilitar roteamento via firewall
     private boolean firewallEnabled = true;
@@ -212,11 +216,6 @@ public class ServiceRegistry {
         return firewallEnabled;
     }
 
-    public void setFirewallEnabled(boolean enabled) {
-        this.firewallEnabled = enabled;
-        logger.info("Firewall routing {}", enabled ? "habilitado" : "desabilitado");
-    }
-
     public String getExternalAuthAddress() {
         return PACKET_FILTER_HOST + ":" + PACKET_FILTER_AUTH_PORT;
     }
@@ -225,7 +224,11 @@ public class ServiceRegistry {
         return PACKET_FILTER_HOST + ":" + PACKET_FILTER_EDGE_PORT;
     }
 
-    public String getExternalDatacenterAddress() {
-        return PACKET_FILTER_HOST + ":" + PACKET_FILTER_DATACENTER_PORT;
+    public String getExternalDatacenterClientAddress() {
+        return PACKET_FILTER_HOST + ":" + PACKET_FILTER_DATACENTER_CLI_PORT;
+    }
+
+    public String getInternalDatacenterAddress() {
+        return REVERSE_PROXY_HOST + ":" + REVERSE_PROXY_DATACENTER_EDGE_PORT;
     }
 }

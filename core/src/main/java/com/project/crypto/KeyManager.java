@@ -7,7 +7,6 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
 import java.security.KeyPair;
-import java.security.PrivateKey;
 import java.security.PublicKey;
 
 import java.util.Base64;
@@ -142,26 +141,6 @@ public class KeyManager {
         storePeerKey(peerId, publicKey);
     }
 
-    public PublicKey getPeerPublicKey(String peerId) {
-        logger.debug("Recuperando chave pública de peer '{}' ...", peerId);
-
-        PublicKey publicKey = peerPublicKeys.get(peerId);
-        
-        logger.debug("Resultado da busca: {}", publicKey != null ? "ENCONTRADA ✓" : "NÃO ENCONTRADA ✗");
-
-        return publicKey;
-    }
-
-    public boolean hasPeerKey(String peerId) {
-        boolean hasKey = peerPublicKeys.containsKey(peerId);
-
-        logger.debug("Verificando existência de chave pública para peer '{}' : {}",
-        peerId,
-        hasKey ? "EXISTE ✓" : "NÃO EXISTE ✗");
-
-        return hasKey;
-    }
-
     public byte[] encryptForPeer(String peerId, byte[] data) throws GeneralSecurityException {
         logger.debug("Cifrando {} bytes para peer '{}'...", data.length, peerId);
         PublicKey peerKey = peerPublicKeys.get(peerId);
@@ -212,14 +191,6 @@ public class KeyManager {
             peerId, 
             isValid ? "VÁLIDA ✓" : "INVÁLIDA ✗");
         return isValid;
-    }
-
-    public PublicKey getPublicKey() {
-        return rsaKeyPair.getPublic();
-    }
-
-    public PrivateKey getPrivateKey() {
-        return rsaKeyPair.getPrivate();
     }
 
     public String getPublicKeyBase64() {

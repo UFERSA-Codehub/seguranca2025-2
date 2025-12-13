@@ -70,6 +70,13 @@ public class SensorTcpHandler implements Runnable {
         }
     }
 
+    /**
+     * Retorna o ID do peer (sensor) conectado.
+     */
+    public String getPeerId() {
+        return peerId;
+    }
+
     @Override
     public void run() {
         try {
@@ -98,6 +105,9 @@ public class SensorTcpHandler implements Runnable {
         }
 
         this.peerId = hello.getSenderId();
+        // Definir tracePeerId logo apos saber o peerId, antes de enviar qualquer resposta
+        // Usa REVERSE_PROXY pois e com quem Edge realmente se comunica (via firewall)
+        channel.setTracePeerId("REVERSE_PROXY");
         logger.info("HELLO recebido de '{}'", peerId);
 
         MessageTCP challenge = channel.handleHello(hello);
@@ -157,6 +167,14 @@ public class SensorTcpHandler implements Runnable {
         }
 
         String sensorId = jwt.getSensorId(token);
+        
+        // Verificar se o sensor está na blacklist
+        if (serverEdge.isSensorBlacklisted(sensorId)) {
+            logger.warn("Dados rejeitados de sensor na blacklist: '{}'", sensorId);
+            sendError("Sensor bloqueado");
+            return;
+        }
+        
         String payload = envelope.getPayload();
         if (payload == null) {
             logger.error("Payload vazio em DATA de '{}'", peerId);

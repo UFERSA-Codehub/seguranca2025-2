@@ -51,6 +51,7 @@ public class UdpHandler {
             logger.error("Falha ao processar HELLO de {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(challenge, clientAddress, clientPort);
         logger.debug("CHALLENGE enviado para {} ({})", senderId, peerInfo);
     }
@@ -123,6 +124,7 @@ public class UdpHandler {
             logger.error("Falha ao construir resposta para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("FOUND_EDGE enviado para {}", senderId);
     }
@@ -150,17 +152,26 @@ public class UdpHandler {
             logger.info("Nenhum DATACENTER disponível para {}", senderId);
             response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.NOT_FOUND, "Nenhum DATACENTER disponível");
         } else {
-            ServiceInfo dc = registry.getFirstDatacenter();
-            int selectedPort = "http".equals(protocol) ? dc.getHttpPort() : dc.getPort();
-            String responsePayload = dc.getHost() + ":" + selectedPort;
+            String responsePayload;
+            
+            if ("http".equals(protocol)) {
+                // CLI clients (HTTP) go through PacketFilter:3030
+                responsePayload = registry.getExternalDatacenterClientAddress();
+                logger.debug("Retornando endereço do PacketFilter para CLI client {} ({})", senderId, peerInfo);
+            } else {
+                // Edge (TCP) goes through ReverseProxy:3022
+                responsePayload = registry.getInternalDatacenterAddress();
+                logger.debug("Retornando endereço do ReverseProxy para {} (protocolo: tcp)", senderId);
+            }
+            
             response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.FOUND_DATACENTER, responsePayload);
-            logger.debug("DATACENTER {} selecionado para {} (protocolo: {})", dc.getServiceId(), senderId, protocol);
         }
 
         if (response == null) {
             logger.error("Falha ao construir resposta para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("FOUND_DATACENTER enviado para {} (protocolo: {})", senderId, protocol);
     }
@@ -187,6 +198,7 @@ public class UdpHandler {
             logger.error("Falha ao construir resposta REGISTER_OK para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("REGISTER_OK enviado para {} ({})", senderId, peerInfo);
     }
@@ -214,6 +226,7 @@ public class UdpHandler {
             logger.error("Falha ao construir resposta REGISTER_OK para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("REGISTER_OK enviado para {} ({})", senderId, peerInfo);
     }
@@ -240,29 +253,39 @@ public class UdpHandler {
             logger.error("Falha ao construir resposta REGISTER_OK para {} ({})", senderId, peerInfo);
             return;
         }
+        channel.setTracePeerId(senderId);
         channel.send(response, clientAddress, clientPort);
         logger.info("REGISTER_OK enviado para {} ({})", senderId, peerInfo);
     }
 
     private void handleHeartbeat(String senderId, EnvelopeUDP envelope, InetAddress clientAddress, int clientPort) {
+        String peerInfo = clientAddress.getHostAddress() + ":" + clientPort;
+        boolean found = false;
+
         if (registry.updateEdgeLastSeen(senderId)) {
             logger.debug("HEARTBEAT de EDGE {}", senderId);
-            return;
-        }
-
-        if (registry.updateDatacenterLastSeen(senderId)) {
+            found = true;
+        } else if (registry.updateDatacenterLastSeen(senderId)) {
             logger.debug("HEARTBEAT de DATACENTER {}", senderId);
-            return;
-        }
-
-        if (registry.updateAuthServerLastSeen(senderId)) {
+            found = true;
+        } else if (registry.updateAuthServerLastSeen(senderId)) {
             logger.debug("HEARTBEAT de AUTH {}", senderId);
+            found = true;
+        }
+
+        if (found) {
+            // Enviar HEARTBEAT_OK para confirmar recebimento
+            MessageUDP response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.HEARTBEAT_OK, "OK");
+            if (response != null) {
+                channel.setTracePeerId(senderId);
+                channel.send(response, clientAddress, clientPort);
+            }
             return;
         }
 
-        String peerInfo = clientAddress.getHostAddress() + ":" + clientPort;
         logger.warn("HEARTBEAT de serviço não registrado: {} ({}) - solicitando RE_REGISTER", senderId, peerInfo);
         MessageUDP reRegister = new MessageUDP(MessageTypeUDP.RE_REGISTER, serverId);
+        channel.setTracePeerId(senderId);
         channel.send(reRegister, clientAddress, clientPort);
     }
 }
