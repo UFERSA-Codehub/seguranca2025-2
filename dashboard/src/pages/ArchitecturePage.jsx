@@ -16,9 +16,6 @@ import InfoNode from '@/nodes/InfoNode';
 import InfoEdge from '@/edges/InfoEdge';
 import { NODE_INFO, EDGE_INFO, ZONES, NODE_POSITIONS, ZONE_BOUNDS } from '@/data/architectureInfo';
 
-/**
- * ZoneNode - A background zone that renders behind other nodes
- */
 function ZoneNode({ data }) {
     const { zone, bounds } = data;
     const zoneInfo = ZONES[zone];
@@ -54,22 +51,16 @@ function ZoneNode({ data }) {
 const nodeTypes = { info: InfoNode, zone: ZoneNode };
 const edgeTypes = { info: InfoEdge };
 
-// Bidirectional arrow markers
 const bidirectionalMarkers = {
     markerStart: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#64748b', orient: 'auto-start-reverse' },
     markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#64748b' },
 };
 
-// Unidirectional arrow marker
 const unidirectionalMarker = {
     markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: '#64748b' },
 };
 
-/**
- * Info panel that shows details about selected node or edge
- */
 const InfoPanel = forwardRef(function InfoPanel({ selectedNode, selectedEdge, onClose, isExpanded, onToggleExpand }, ref) {
-    // Node info display
     if (selectedNode) {
         const info = NODE_INFO[selectedNode];
         if (!info) return null;
@@ -131,7 +122,6 @@ const InfoPanel = forwardRef(function InfoPanel({ selectedNode, selectedEdge, on
         );
     }
 
-    // Edge info display
     if (selectedEdge) {
         const info = EDGE_INFO[selectedEdge];
         if (!info) return null;
@@ -182,7 +172,6 @@ const InfoPanel = forwardRef(function InfoPanel({ selectedNode, selectedEdge, on
         );
     }
 
-    // No selection - show hint
     return (
         <div ref={ref} className="architecture-info-panel collapsed hint">
             <div className="info-panel-header">
@@ -192,9 +181,6 @@ const InfoPanel = forwardRef(function InfoPanel({ selectedNode, selectedEdge, on
     );
 });
 
-/**
- * Main Architecture Page Content
- */
 function ArchitectureContent() {
     const reactFlowInstance = useReactFlow();
     const diagramRef = useRef(null);
@@ -206,31 +192,26 @@ function ArchitectureContent() {
     const [selectedEdge, setSelectedEdge] = useState(null);
     const [isPanelExpanded, setIsPanelExpanded] = useState(true);
 
-    // Handle node click
     const handleNodeClick = useCallback((nodeId) => {
         setSelectedNode(nodeId);
         setSelectedEdge(null);
     }, []);
 
-    // Handle edge click via ReactFlow's onEdgeClick
     const handleReactFlowEdgeClick = useCallback((event, edge) => {
         event.stopPropagation();
         setSelectedEdge(edge.id);
         setSelectedNode(null);
     }, []);
 
-    // Clear selection
     const handleClearSelection = useCallback(() => {
         setSelectedNode(null);
         setSelectedEdge(null);
     }, []);
 
-    // Toggle panel expanded state
     const handleTogglePanelExpand = useCallback(() => {
         setIsPanelExpanded(prev => !prev);
     }, []);
 
-    // Fit view helper with optional smooth animation
     const doFitView = useCallback((duration = 0) => {
         if (!reactFlowInstance) return;
         reactFlowInstance.fitView({ 
@@ -239,16 +220,13 @@ function ArchitectureContent() {
         });
     }, [reactFlowInstance]);
 
-    // Listen for panel CSS transition end to trigger smooth fitView
     useEffect(() => {
         const panel = panelRef.current;
         if (!panel) return;
 
         const handleTransitionEnd = (e) => {
-            // Only react to max-height transitions on the panel itself
             if (e.target === panel && e.propertyName === 'max-height' && pendingFitView.current) {
                 pendingFitView.current = false;
-                // After CSS transition completes, do a smooth fitView
                 doFitView(200);
             }
         };
@@ -257,32 +235,27 @@ function ArchitectureContent() {
         return () => panel.removeEventListener('transitionend', handleTransitionEnd);
     }, [doFitView]);
 
-    // Mark that we need a fitView after panel transition completes
     useEffect(() => {
         if (!isInitialized.current) return;
         pendingFitView.current = true;
     }, [isPanelExpanded]);
 
-    // Re-fit view when selection changes (panel appears/disappears)
     const hasSelection = selectedNode || selectedEdge;
     const prevHasSelection = useRef(hasSelection);
     
     useEffect(() => {
         if (!isInitialized.current) return;
-        // Only refit if selection state changed (panel appeared or disappeared)
         if (prevHasSelection.current !== hasSelection) {
             pendingFitView.current = true;
         }
         prevHasSelection.current = hasSelection;
     }, [hasSelection]);
 
-    // ResizeObserver to handle container resizes (window resize, etc.)
     useEffect(() => {
         if (!diagramRef.current || !reactFlowInstance) return;
         
         let resizeTimeout;
         const observer = new ResizeObserver(() => {
-            // Debounce resize - only trigger when no panel transition is pending
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
                 if (isInitialized.current && !pendingFitView.current) {
@@ -298,7 +271,6 @@ function ArchitectureContent() {
         };
     }, [reactFlowInstance, doFitView]);
 
-    // Build zone nodes (rendered behind other nodes with lower zIndex)
     const zoneNodes = useMemo(() => {
         return Object.entries(ZONE_BOUNDS).map(([zoneId, bounds]) => ({
             id: `zone-${zoneId}`,
@@ -311,7 +283,6 @@ function ArchitectureContent() {
         }));
     }, []);
 
-    // Build component nodes from static data
     const componentNodes = useMemo(() => {
         return Object.entries(NODE_INFO).map(([nodeId, info]) => ({
             id: nodeId,
@@ -329,20 +300,18 @@ function ArchitectureContent() {
         }));
     }, [selectedNode, handleNodeClick]);
 
-    // Combine zone nodes (background) with component nodes
     const initialNodes = useMemo(() => {
         return [...zoneNodes, ...componentNodes];
     }, [zoneNodes, componentNodes]);
 
-    // Build edges from static data
     const initialEdges = useMemo(() => {
         const edgeConfigs = [
-            { id: 'e-sensors-discovery', source: 'SENSORS', target: 'DISCOVERY', sourceHandle: 'left-source', targetHandle: 'left-target' },
             { id: 'e-sensors-pf', source: 'SENSORS', target: 'PACKET_FILTER', sourceHandle: 'right-source', targetHandle: 'left-target' },
-            { id: 'e-clients-discovery', source: 'CLIENTS', target: 'DISCOVERY', sourceHandle: 'left-source', targetHandle: 'left-target' },
             { id: 'e-clients-pf', source: 'CLIENTS', target: 'PACKET_FILTER', sourceHandle: 'right-source', targetHandle: 'left-target' },
+            { id: 'e-pf-discovery', source: 'PACKET_FILTER', target: 'DISCOVERY', sourceHandle: 'bottom-source', targetHandle: 'left-target' },
             { id: 'e-pf-rp', source: 'PACKET_FILTER', target: 'REVERSE_PROXY', sourceHandle: 'right-source', targetHandle: 'left-target' },
             { id: 'e-pf-ids', source: 'PACKET_FILTER', target: 'IDS', sourceHandle: 'top-source', targetHandle: 'bottom-target' },
+            { id: 'e-rp-discovery', source: 'REVERSE_PROXY', target: 'DISCOVERY', sourceHandle: 'bottom-source', targetHandle: 'top-target' },
             { id: 'e-rp-ids', source: 'REVERSE_PROXY', target: 'IDS', sourceHandle: 'top-source', targetHandle: 'bottom-target' },
             { id: 'e-rp-edge', source: 'REVERSE_PROXY', target: 'EDGE', sourceHandle: 'right-source', targetHandle: 'left-target' },
             { id: 'e-rp-dc', source: 'REVERSE_PROXY', target: 'DATACENTER', sourceHandle: 'right-source', targetHandle: 'left-target' },
@@ -350,9 +319,6 @@ function ArchitectureContent() {
             { id: 'e-ids-edge', source: 'IDS', target: 'EDGE', sourceHandle: 'right-source', targetHandle: 'left-target', unidirectional: true },
             { id: 'e-edge-dc', source: 'EDGE', target: 'DATACENTER', sourceHandle: 'bottom-source', targetHandle: 'top-target', unidirectional: true },
             { id: 'e-dc-auth', source: 'DATACENTER', target: 'AUTH', sourceHandle: 'bottom-source', targetHandle: 'top-target' },
-            { id: 'e-edge-discovery', source: 'EDGE', target: 'DISCOVERY', sourceHandle: 'bottom-source', targetHandle: 'right-target' },
-            { id: 'e-dc-discovery', source: 'DATACENTER', target: 'DISCOVERY', sourceHandle: 'bottom-source', targetHandle: 'right-target' },
-            { id: 'e-auth-discovery', source: 'AUTH', target: 'DISCOVERY', sourceHandle: 'bottom-source', targetHandle: 'right-target' },
         ];
 
         return edgeConfigs.map(config => {
@@ -379,29 +345,24 @@ function ArchitectureContent() {
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-    // Update nodes when selection changes
     useMemo(() => {
         setNodes(initialNodes);
     }, [initialNodes, setNodes]);
 
-    // Update edges when selection changes
     useMemo(() => {
         setEdges(initialEdges);
     }, [initialEdges, setEdges]);
 
-    // Handle click on empty canvas
     const handlePaneClick = useCallback(() => {
         handleClearSelection();
     }, [handleClearSelection]);
 
-    // onInit callback - mark as initialized and do initial fitView
     const handleInit = useCallback(() => {
         isInitialized.current = true;
     }, []);
 
     return (
         <div className="architecture-page">
-            {/* Legend */}
             <div className="architecture-legend">
                 <div className="legend-item">
                     <svg width="40" height="2">
@@ -417,7 +378,6 @@ function ArchitectureContent() {
                 </div>
             </div>
 
-            {/* ReactFlow Diagram */}
             <div className="architecture-diagram" ref={diagramRef}>
                 <ReactFlow
                     nodes={nodes}
@@ -443,7 +403,6 @@ function ArchitectureContent() {
                 </ReactFlow>
             </div>
 
-            {/* Info Panel */}
             <InfoPanel
                 ref={panelRef}
                 selectedNode={selectedNode}

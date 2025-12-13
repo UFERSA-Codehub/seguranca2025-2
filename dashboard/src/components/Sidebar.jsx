@@ -9,21 +9,12 @@ import {
     ChevronsRight,
 } from 'lucide-react';
 
-/**
- * Collapsible sidebar showing trace events list with pagination.
- * Slides in/out from the right side of the viewport.
- * 
- * Now shows correct counts:
- * - When filters active: shows filteredAllEvents.length
- * - When no filters: shows allEvents.length
- * - Pagination reflects filtered list
- */
 function Sidebar({
     isCollapsed,
     onToggle,
-    events,              // Paginated, filtered events (displayed in list)
-    allEvents,           // All stored events (for "total" reference)
-    filteredAllEvents,   // All filtered events (for count when filters active)
+    events,
+    allEvents,
+    filteredAllEvents,
     connected,
     bufferFull,
     currentPage,
@@ -37,9 +28,8 @@ function Sidebar({
     onEventClick,
     currentIndex,
     hasActiveFilters,
-    addressToClientMap,  // Map of IP:port → client ID for resolving addresses
+    addressToClientMap,
 }) {
-    // Formata o payload para exibição
     const formatPayload = useCallback((payload) => {
         if (!payload) return 'N/A';
         try {
@@ -50,39 +40,31 @@ function Sidebar({
         }
     }, []);
 
-    // Resolve peer for display: prefer peerId, fallback to resolved remoteAddress
     const resolvePeer = useCallback((event) => {
-        // If peerId is already a logical name (not an IP), use it
         if (event.peerId && !/^\/?[\d.:]+$/.test(event.peerId)) {
             return event.peerId;
         }
         
-        // Try to resolve remoteAddress to a client ID
         if (event.remoteAddress && addressToClientMap) {
             const normalizedAddr = normalizeAddress(event.remoteAddress);
             const clientId = addressToClientMap.get(normalizedAddr);
             if (clientId) return clientId;
-            // Return normalized address if no mapping found
             return normalizedAddr || event.remoteAddress;
         }
         
-        // Fallback to peerId or ?
         return event.peerId || '?';
     }, [addressToClientMap]);
 
-    // Verifica se o evento está ativo (baseado no índice global)
     const isEventActive = useCallback((localIndex) => {
         const globalIndex = currentPage * pageSize + localIndex;
         return globalIndex === currentIndex;
     }, [currentIndex, currentPage, pageSize]);
 
-    // Determine counts to display
     const displayedCount = hasActiveFilters ? filteredAllEvents.length : allEvents.length;
     const totalCount = allEvents.length;
 
     return (
         <div className="sidebar-wrapper">
-            {/* Toggle Handle - OUTSIDE sidebar for visibility when collapsed */}
             <button 
                 className={`sidebar-toggle-handle ${isCollapsed ? 'collapsed' : ''}`}
                 onClick={onToggle}
@@ -92,7 +74,6 @@ function Sidebar({
             </button>
 
             <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
-            {/* Header */}
             <div className="sidebar-header">
                 <h2>Eventos de Trace</h2>
                 <div className="status">
@@ -106,7 +87,6 @@ function Sidebar({
                 )}
             </div>
 
-            {/* Pagination - always visible */}
             <div className="pagination">
                 <Button
                     variant="secondary"
@@ -159,7 +139,6 @@ function Sidebar({
                 </Button>
             </div>
 
-            {/* Events List - now shows 'events' which is already paginated from filtered list */}
             <div className="events-list">
                 {events.map((event, idx) => (
                     <div
@@ -188,7 +167,6 @@ function Sidebar({
                 )}
             </div>
 
-            {/* Payload Panel */}
                 {currentEvent && (
                     <div className="payload-panel">
                         <h3>Detalhes do Payload</h3>

@@ -261,22 +261,30 @@ public class UdpHandler {
     }
 
     private void handleHeartbeat(String senderId, EnvelopeUDP envelope, InetAddress clientAddress, int clientPort) {
+        String peerInfo = clientAddress.getHostAddress() + ":" + clientPort;
+        boolean found = false;
+
         if (registry.updateEdgeLastSeen(senderId)) {
             logger.debug("HEARTBEAT de EDGE {}", senderId);
-            return;
-        }
-
-        if (registry.updateDatacenterLastSeen(senderId)) {
+            found = true;
+        } else if (registry.updateDatacenterLastSeen(senderId)) {
             logger.debug("HEARTBEAT de DATACENTER {}", senderId);
-            return;
-        }
-
-        if (registry.updateAuthServerLastSeen(senderId)) {
+            found = true;
+        } else if (registry.updateAuthServerLastSeen(senderId)) {
             logger.debug("HEARTBEAT de AUTH {}", senderId);
+            found = true;
+        }
+
+        if (found) {
+            // Enviar HEARTBEAT_OK para confirmar recebimento
+            MessageUDP response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.HEARTBEAT_OK, "OK");
+            if (response != null) {
+                channel.setTracePeerId(senderId);
+                channel.send(response, clientAddress, clientPort);
+            }
             return;
         }
 
-        String peerInfo = clientAddress.getHostAddress() + ":" + clientPort;
         logger.warn("HEARTBEAT de serviço não registrado: {} ({}) - solicitando RE_REGISTER", senderId, peerInfo);
         MessageUDP reRegister = new MessageUDP(MessageTypeUDP.RE_REGISTER, serverId);
         channel.setTracePeerId(senderId);

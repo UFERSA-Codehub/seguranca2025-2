@@ -1,14 +1,11 @@
 import { lazy, Suspense, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '@/api/client';
-
-// Lazy load report components for code splitting
 const AirQualityReport = lazy(() => import('./reports/AirQualityReport'));
 const FloodReport = lazy(() => import('./reports/FloodReport'));
 const PollutionReport = lazy(() => import('./reports/PollutionReport'));
 const NoiseReport = lazy(() => import('./reports/NoiseReport'));
 const UVReport = lazy(() => import('./reports/UVReport'));
-
 const REPORT_COMPONENTS = {
     'air-quality': AirQualityReport,
     'flood': FloodReport,
@@ -16,7 +13,6 @@ const REPORT_COMPONENTS = {
     'noise': NoiseReport,
     'uv': UVReport,
 };
-
 const REPORT_TITLES = {
     'air-quality': 'Qualidade do Ar',
     'flood': 'Alerta de Enchente',
@@ -24,17 +20,14 @@ const REPORT_TITLES = {
     'noise': 'Mapa de Ruído',
     'uv': 'Índice UV',
 };
-
 function ReportLoading() {
     return <div className="loading-text">Carregando visualização...</div>;
 }
-
 export default function ReportPage() {
     const { type } = useParams();
     const [report, setReport] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-
     useEffect(() => {
         setLoading(true);
         setError(null);
@@ -43,9 +36,7 @@ export default function ReportPage() {
             .catch((err) => setError(err.message))
             .finally(() => setLoading(false));
     }, [type]);
-
     const ReportComponent = REPORT_COMPONENTS[type];
-
     if (loading) {
         return (
             <div className="page report-page">
@@ -57,7 +48,6 @@ export default function ReportPage() {
             </div>
         );
     }
-
     if (error) {
         return (
             <div className="page report-page">
@@ -69,7 +59,6 @@ export default function ReportPage() {
             </div>
         );
     }
-
     if (!ReportComponent) {
         return (
             <div className="page report-page">
@@ -81,7 +70,6 @@ export default function ReportPage() {
             </div>
         );
     }
-
     return (
         <Suspense fallback={<ReportLoading />}>
             <ReportComponent data={report} />

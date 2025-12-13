@@ -1,13 +1,6 @@
 import { memo } from 'react';
 import { BaseEdge, getSmoothStepPath } from '@xyflow/react';
 
-/**
- * InfoEdge - Clickable edge for the Architecture info page.
- * - Solid line for TCP
- * - Dashed line for UDP
- * - Bidirectional arrows where applicable
- * - Click to select and show info
- */
 function InfoEdge({
     id,
     sourceX,
@@ -34,14 +27,12 @@ function InfoEdge({
         borderRadius: 16,
     });
 
-    // Colors
     const baseColor = '#64748b';
     const selectedColor = '#22c55e';
     const strokeColor = selected ? selectedColor : baseColor;
 
     return (
         <>
-            {/* Invisible wider path for easier clicking */}
             <path
                 d={edgePath}
                 fill="none"
@@ -50,7 +41,6 @@ function InfoEdge({
                 style={{ cursor: 'pointer' }}
             />
             
-            {/* Visible edge */}
             <BaseEdge
                 id={id}
                 path={edgePath}
@@ -66,7 +56,6 @@ function InfoEdge({
                 interactionWidth={20}
             />
             
-            {/* Glow effect when selected */}
             {selected && (
                 <path
                     d={edgePath}

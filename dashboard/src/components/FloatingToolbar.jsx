@@ -3,11 +3,6 @@ import { Filter, Trash2, Maximize } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
-/**
- * Floating vertical toolbar positioned to the left of the sidebar.
- * Contains filter, clear, and reset view buttons.
- * Always visible regardless of sidebar state.
- */
 function FloatingToolbar({
     onFilterClick,
     onClearClick,

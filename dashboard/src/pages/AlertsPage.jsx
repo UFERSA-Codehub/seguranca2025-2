@@ -1,16 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/api/client';
-
 const PAGE_SIZE = 15;
-
 function AlertDetailDialog({ alert, onClose }) {
     if (!alert) return null;
-
     const formatTimestamp = (ts) => {
         if (!ts) return '-';
         return new Date(ts).toLocaleString('pt-BR');
     };
-
     const formatAlertType = (type) => {
         const typeNames = {
             'pollution': 'Poluição',
@@ -21,9 +17,7 @@ function AlertDetailDialog({ alert, onClose }) {
         };
         return typeNames[type?.toLowerCase()] || type || 'Alerta';
     };
-
     const data = alert.data || {};
-
     return (
         <div className="dialog-overlay" onClick={onClose}>
             <div className="dialog-content" onClick={(e) => e.stopPropagation()}>
@@ -65,7 +59,6 @@ function AlertDetailDialog({ alert, onClose }) {
         </div>
     );
 }
-
 export default function AlertsPage() {
     const [alerts, setAlerts] = useState([]);
     const [page, setPage] = useState(1);
@@ -73,12 +66,10 @@ export default function AlertsPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [selectedAlert, setSelectedAlert] = useState(null);
-
     const fetchAlerts = useCallback(async () => {
         try {
             setLoading(true);
             const result = await api.alerts(page, PAGE_SIZE);
-            // API returns 'alerts' array, not 'data'
             setAlerts(result.alerts || []);
             setTotalPages(result.totalPages || 1);
             setError(null);
@@ -88,18 +79,14 @@ export default function AlertsPage() {
             setLoading(false);
         }
     }, [page]);
-
     useEffect(() => {
         fetchAlerts();
     }, [fetchAlerts]);
-
     const formatTimestamp = (ts) => {
         if (!ts) return '-';
         return new Date(ts).toLocaleString('pt-BR');
     };
-
     const getSeverityFromAlertType = (alertType) => {
-        // Map alert types to severity levels
         const severityMap = {
             'pollution': 'high',
             'flood': 'critical',
@@ -109,7 +96,6 @@ export default function AlertsPage() {
         };
         return severityMap[alertType?.toLowerCase()] || 'medium';
     };
-
     const getSeverityClass = (severity) => {
         switch (severity?.toLowerCase()) {
             case 'critical': return 'severity-critical';
@@ -119,7 +105,6 @@ export default function AlertsPage() {
             default: return '';
         }
     };
-
     const formatAlertType = (type) => {
         const typeNames = {
             'pollution': 'Poluição',
@@ -130,26 +115,20 @@ export default function AlertsPage() {
         };
         return typeNames[type?.toLowerCase()] || type || 'Alerta';
     };
-
     const getAlertMessage = (alert) => {
-        // Extract message from the alert data
         const data = alert.data || {};
         const type = data.type || alert.alertType || 'unknown';
         const value = data.value;
         const unit = data.unit || '';
-        
         if (value !== undefined) {
             return `Valor detectado: ${value} ${unit}`;
         }
         return `Alerta do tipo ${formatAlertType(type)}`;
     };
-
     return (
         <div className="page alerts-page">
             <h2>Alertas</h2>
-
             {error && <div className="error-text">{error}</div>}
-
             {alerts.length > 0 && (
                 <>
                     <div className="alerts-list">
@@ -174,7 +153,6 @@ export default function AlertsPage() {
                             );
                         })}
                     </div>
-
                     <div className="pagination">
                         <button
                             onClick={() => setPage(1)}
@@ -206,11 +184,9 @@ export default function AlertsPage() {
                     </div>
                 </>
             )}
-
             {!loading && alerts.length === 0 && !error && (
                 <div className="empty-state">Nenhum alerta no momento</div>
             )}
-
             <AlertDetailDialog 
                 alert={selectedAlert} 
                 onClose={() => setSelectedAlert(null)} 

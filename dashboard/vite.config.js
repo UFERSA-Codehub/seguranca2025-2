@@ -4,7 +4,6 @@ import react from "@vitejs/plugin-react"
 import basicSsl from "@vitejs/plugin-basic-ssl"
 import { defineConfig } from "vite"
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss(), basicSsl()],
   server: {
@@ -12,7 +11,6 @@ export default defineConfig({
     host: true,
     https: true,
     proxy: {
-      // Proxy API requests to backend
       '/api': {
         target: 'http://172.18.64.222:9091',
         changeOrigin: true,

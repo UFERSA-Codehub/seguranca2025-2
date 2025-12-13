@@ -11,10 +11,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 
-/**
- * Playback controls HUD with transport buttons and timeline scrubber.
- * Uses shadcn Button and Slider components for consistent styling.
- */
 function PlaybackControls({
     isPlaying,
     isAnimating,
@@ -30,19 +26,15 @@ function PlaybackControls({
     bufferedCount,
 }) {
     const totalEvents = maxIndex + 1;
-    // Display: index 0 = event 1, index max = event max+1
     const displayIndex = currentIndex + 1;
 
     const handleScrubberChange = (values) => {
-        // Slider returns an array of values
         if (values && values.length > 0) {
             seekTo(values[0]);
         }
     };
 
-    // Can step backward = go to older event = decrease index (must be > 0)
     const canStepBackward = currentIndex > 0;
-    // Can step forward = go to newer event = increase index (must be < max)
     const canStepForward = currentIndex < maxIndex;
 
     return (

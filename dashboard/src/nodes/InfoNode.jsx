@@ -12,7 +12,6 @@ import {
     Users,
 } from 'lucide-react';
 import { ZONES } from '@/data/architectureInfo';
-
 const ICONS = {
     SENSORS: Radio,
     CLIENTS: Users,
@@ -24,25 +23,15 @@ const ICONS = {
     EDGE: Globe,
     DATACENTER: Database,
 };
-
-/**
- * InfoNode - Clickable node for the Architecture info page.
- * Supports two shapes:
- * - 'circle' for external entities (Sensors, Clients)
- * - 'rectangle' for internal servers
- */
 function InfoNode({ data, selected }) {
     const { label, zone, nodeId, shape, onClick } = data;
     const zoneInfo = ZONES[zone] || ZONES.dmz;
     const IconComponent = ICONS[nodeId] || Radio;
     const isCircle = shape === 'circle';
-
     const handleClick = (e) => {
         e.stopPropagation();
         if (onClick) onClick(nodeId);
     };
-
-    // Common styles
     const baseStyle = {
         backgroundColor: selected ? zoneInfo.fill : '#1e293b',
         border: `2px ${isCircle ? 'dashed' : 'solid'} ${selected ? zoneInfo.color : zoneInfo.borderColor}`,
@@ -50,8 +39,6 @@ function InfoNode({ data, selected }) {
         transition: 'all 0.2s ease',
         boxShadow: selected ? `0 0 16px ${zoneInfo.color}60` : 'none',
     };
-
-    // Circle shape for external entities
     if (isCircle) {
         return (
             <div
@@ -77,7 +64,6 @@ function InfoNode({ data, selected }) {
                 <Handle type="target" position={Position.Top} id="top-target" style={{ background: zoneInfo.color }} />
                 <Handle type="source" position={Position.Bottom} id="bottom-source" style={{ background: zoneInfo.color }} />
                 <Handle type="target" position={Position.Bottom} id="bottom-target" style={{ background: zoneInfo.color }} />
-                
                 <IconComponent size={28} color="#e2e8f0" />
                 <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#e2e8f0', marginTop: '6px' }}>
                     {label}
@@ -85,8 +71,6 @@ function InfoNode({ data, selected }) {
             </div>
         );
     }
-
-    // Rectangle shape for servers
     return (
         <div
             className="info-node info-node-rectangle"
@@ -108,7 +92,6 @@ function InfoNode({ data, selected }) {
             <Handle type="source" position={Position.Right} id="right-source" style={{ background: zoneInfo.color }} />
             <Handle type="target" position={Position.Bottom} id="bottom-target" style={{ background: zoneInfo.color }} />
             <Handle type="source" position={Position.Bottom} id="bottom-source" style={{ background: zoneInfo.color }} />
-            
             <div style={{ marginBottom: '4px', display: 'flex', justifyContent: 'center' }}>
                 <IconComponent size={24} color="#e2e8f0" />
             </div>
@@ -118,5 +101,4 @@ function InfoNode({ data, selected }) {
         </div>
     );
 }
-
 export default memo(InfoNode);

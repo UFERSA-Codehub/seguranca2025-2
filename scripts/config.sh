@@ -38,15 +38,15 @@ SENSOR_CLASS="com.project.client.sensor.Sensor"
 MALICIOUS_SENSOR_CLASS="com.project.client.sensor.MaliciousSensor"
 CLIENT_APP_CLASS="com.project.client.ClientApp"
 
-# Delays (segundos)
-DISCOVERY_DELAY=1
-IDS_DELAY=1
-AUTH_DELAY=1
-EDGE_DELAY=1
-DATACENTER_DELAY=1
-PROXY_DELAY=1
-PFILTER_DELAY=1
-SENSOR_DELAY=1
+# Delays (segundos) - increased for reliable startup
+DISCOVERY_DELAY=2
+IDS_DELAY=2
+PROXY_DELAY=3
+PFILTER_DELAY=2
+AUTH_DELAY=2
+EDGE_DELAY=2
+DATACENTER_DELAY=2
+SENSOR_DELAY=2
 
 # Sensores (ID|PASSWORD)
 declare -a SENSORS=(

@@ -4,14 +4,30 @@
 # Script de Inicializacao do Sistema de Monitoramento Ambiental
 #
 # Uso:
-#   ./system.sh           - Modo normal
+#   ./system.sh           - Modo normal (com sensores locais)
 #   ./system.sh -t        - Modo com tracing + dashboard
+#   ./system.sh -s        - Modo servidor apenas (sem sensores locais)
+#   ./system.sh -t -s     - Tracing + servidor apenas
+#
+# Use -s quando for executar sensores externamente (ex: Windows)
 #
 # Pressione ? dentro do tmux para ver ajuda (janelas, atalhos, etc)
 ###############################################################################
 
 # Importar configuracoes
 source "$(dirname "$0")/config.sh"
+
+# Parse flags
+SKIP_SENSORS=false
+for arg in "$@"; do
+    case $arg in
+        -s|--skip-sensors)
+            SKIP_SENSORS=true
+            echo -e "${YELLOW}⚠️  Modo servidor: sensores locais desabilitados${NC}"
+            echo -e "${YELLOW}   Execute sensores externamente (Windows: scripts/start-windows-clients.bat)${NC}"
+            ;;
+    esac
+done
 
 # Configurar flags de tracing
 TRACE_OPTS=""
@@ -163,37 +179,7 @@ echo "$IDS_PID" > "$PID_DIR/ids.pid"
 echo -e "${GREEN}  ✓${NC} IDS iniciado (PID: $IDS_PID)"
 sleep $IDS_DELAY
 
-echo -e "${GREEN}[3/7]${NC} Iniciando AuthServer (TCP:4001)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/auth.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
-    -Dexec.mainClass="$AUTH_CLASS" \
-    -Dexec.cleanupDaemonThreads=false \
-    > /dev/null 2>&1 &
-AUTH_PID=$!
-echo "$AUTH_PID" > "$PID_DIR/auth.pid"
-echo -e "${GREEN}  ✓${NC} AuthServer iniciado (PID: $AUTH_PID)"
-sleep $AUTH_DELAY
-
-echo -e "${GREEN}[4/7]${NC} Iniciando Edge Server (TCP:5000, IDS:5001)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/edge.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
-    -Dexec.mainClass="$EDGE_CLASS" \
-    -Dexec.cleanupDaemonThreads=false \
-    > /dev/null 2>&1 &
-EDGE_PID=$!
-echo "$EDGE_PID" > "$PID_DIR/edge.pid"
-echo -e "${GREEN}  ✓${NC} Edge Server iniciado (PID: $EDGE_PID)"
-sleep $EDGE_DELAY
-
-echo -e "${GREEN}[5/7]${NC} Iniciando Datacenter (TCP:8080, HTTP:9090)..."
-MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/datacenter.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
-    -Dexec.mainClass="$DATACENTER_CLASS" \
-    -Dexec.cleanupDaemonThreads=false \
-    > /dev/null 2>&1 &
-DATACENTER_PID=$!
-echo "$DATACENTER_PID" > "$PID_DIR/datacenter.pid"
-echo -e "${GREEN}  ✓${NC} Datacenter iniciado (PID: $DATACENTER_PID)"
-sleep $DATACENTER_DELAY
-
-echo -e "${GREEN}[6/7]${NC} Iniciando ReverseProxy (TCP:3001-3031, UDP:3041)..."
+echo -e "${GREEN}[3/7]${NC} Iniciando ReverseProxy (TCP:3001-3031, UDP:3041)..."
 MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/proxy.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
     -Dexec.mainClass="$PROXY_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
@@ -203,7 +189,7 @@ echo "$PROXY_PID" > "$PID_DIR/proxy.pid"
 echo -e "${GREEN}  ✓${NC} ReverseProxy iniciado (PID: $PROXY_PID)"
 sleep $PROXY_DELAY
 
-echo -e "${GREEN}[7/7]${NC} Iniciando PacketFilter (TCP:3000-3030, UDP:3040)..."
+echo -e "${GREEN}[4/7]${NC} Iniciando PacketFilter (TCP:3000-3030, UDP:3040)..."
 MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/pfilter.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
     -Dexec.mainClass="$PFILTER_CLASS" \
     -Dexec.cleanupDaemonThreads=false \
@@ -212,6 +198,36 @@ PFILTER_PID=$!
 echo "$PFILTER_PID" > "$PID_DIR/pfilter.pid"
 echo -e "${GREEN}  ✓${NC} PacketFilter iniciado (PID: $PFILTER_PID)"
 sleep $PFILTER_DELAY
+
+echo -e "${GREEN}[5/7]${NC} Iniciando AuthServer (TCP:4001)..."
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/auth.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
+    -Dexec.mainClass="$AUTH_CLASS" \
+    -Dexec.cleanupDaemonThreads=false \
+    > /dev/null 2>&1 &
+AUTH_PID=$!
+echo "$AUTH_PID" > "$PID_DIR/auth.pid"
+echo -e "${GREEN}  ✓${NC} AuthServer iniciado (PID: $AUTH_PID)"
+sleep $AUTH_DELAY
+
+echo -e "${GREEN}[6/7]${NC} Iniciando Edge Server (TCP:5000, IDS:5001)..."
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/edge.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
+    -Dexec.mainClass="$EDGE_CLASS" \
+    -Dexec.cleanupDaemonThreads=false \
+    > /dev/null 2>&1 &
+EDGE_PID=$!
+echo "$EDGE_PID" > "$PID_DIR/edge.pid"
+echo -e "${GREEN}  ✓${NC} Edge Server iniciado (PID: $EDGE_PID)"
+sleep $EDGE_DELAY
+
+echo -e "${GREEN}[7/7]${NC} Iniciando Datacenter (TCP:8080, HTTP:9090)..."
+MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/datacenter.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
+    -Dexec.mainClass="$DATACENTER_CLASS" \
+    -Dexec.cleanupDaemonThreads=false \
+    > /dev/null 2>&1 &
+DATACENTER_PID=$!
+echo "$DATACENTER_PID" > "$PID_DIR/datacenter.pid"
+echo -e "${GREEN}  ✓${NC} Datacenter iniciado (PID: $DATACENTER_PID)"
+sleep $DATACENTER_DELAY
 
 ###############################################################################
 # JANELA 1: INTERNA (Discovery, AuthServer, Edge, Datacenter)
@@ -261,61 +277,67 @@ tmux select-pane -t "$TMUX_SESSION:DMZ.1" -T "🛡️ ReverseProxy (TCP:3001-303
 tmux select-pane -t "$TMUX_SESSION:DMZ.2" -T "🚨 IDS (TCP:3002)"
 
 ###############################################################################
-# JANELA 3: SENSORES
+# JANELA 3: SENSORES (skip if -s flag)
 ###############################################################################
 
-echo -e "${GREEN}[Sensores]${NC} Iniciando ${#SENSORS[@]} sensores..."
+if [[ "$SKIP_SENSORS" == "false" ]]; then
+    echo -e "${GREEN}[Sensores]${NC} Iniciando ${#SENSORS[@]} sensores..."
 
-# Criar janela "Sensores"
-tmux new-window -t "$TMUX_SESSION" -n "Sensores"
+    # Criar janela "Sensores"
+    tmux new-window -t "$TMUX_SESSION" -n "Sensores"
 
-# Grid 2x2 para 4 sensores
-tmux split-window -h -t "$TMUX_SESSION:Sensores"
-tmux split-window -v -t "$TMUX_SESSION:Sensores.0"
-tmux split-window -v -t "$TMUX_SESSION:Sensores.1"
-tmux select-layout -t "$TMUX_SESSION:Sensores" tiled
+    # Grid 2x2 para 4 sensores
+    tmux split-window -h -t "$TMUX_SESSION:Sensores"
+    tmux split-window -v -t "$TMUX_SESSION:Sensores.0"
+    tmux split-window -v -t "$TMUX_SESSION:Sensores.1"
+    tmux select-layout -t "$TMUX_SESSION:Sensores" tiled
 
-# Iniciar sensores em background e enviar comandos para paineis
-painel_idx=0
-for sensor_config in "${SENSORS[@]}"; do
-    IFS='|' read -r sensor_id password <<< "$sensor_config"
-    
-    sensor_args="$sensor_id $password $DISCOVERY_HOST $DISCOVERY_PF_PORT"
-    
-    MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/$sensor_id.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
-        -Dexec.mainClass="$SENSOR_CLASS" \
-        -Dexec.args="$sensor_args" \
-        -Dexec.cleanupDaemonThreads=false \
-        > /dev/null 2>&1 &
-    
-    SENSOR_PID=$!
-    echo "$SENSOR_PID" > "$PID_DIR/$sensor_id.pid"
-    
-    tmux send-keys -t "$TMUX_SESSION:Sensores.$painel_idx" "tail -F --retry '$LOG_DIR/$sensor_id.log'" C-m
-    tmux select-pane -t "$TMUX_SESSION:Sensores.$painel_idx" -T "📡 $sensor_id"
-    
-    echo -e "${GREEN}  ✓${NC} $sensor_id iniciado (PID: $SENSOR_PID)"
-    sleep $SENSOR_DELAY
-    
-    ((painel_idx++))
-done
+    # Iniciar sensores em background e enviar comandos para paineis
+    painel_idx=0
+    for sensor_config in "${SENSORS[@]}"; do
+        IFS='|' read -r sensor_id password <<< "$sensor_config"
+        
+        sensor_args="$sensor_id $password $DISCOVERY_HOST $DISCOVERY_PF_PORT"
+        
+        MAVEN_OPTS="-DLOG_FILE=$LOG_DIR/$sensor_id.log $TRACE_OPTS" mvn -f "$POM_FILE" exec:java -o \
+            -Dexec.mainClass="$SENSOR_CLASS" \
+            -Dexec.args="$sensor_args" \
+            -Dexec.cleanupDaemonThreads=false \
+            > /dev/null 2>&1 &
+        
+        SENSOR_PID=$!
+        echo "$SENSOR_PID" > "$PID_DIR/$sensor_id.pid"
+        
+        tmux send-keys -t "$TMUX_SESSION:Sensores.$painel_idx" "tail -F --retry '$LOG_DIR/$sensor_id.log'" C-m
+        tmux select-pane -t "$TMUX_SESSION:Sensores.$painel_idx" -T "📡 $sensor_id"
+        
+        echo -e "${GREEN}  ✓${NC} $sensor_id iniciado (PID: $SENSOR_PID)"
+        sleep $SENSOR_DELAY
+        
+        ((painel_idx++))
+    done
+else
+    echo -e "${YELLOW}[Sensores]${NC} Skipped (use scripts/start-windows-clients.bat from Windows)"
+fi
 
 ###############################################################################
-# JANELA 4: TESTES (MaliciousSensor, ClientApp)
+# JANELA 4: TESTES (MaliciousSensor, ClientApp) - skip if -s flag
 ###############################################################################
 
-tmux new-window -t "$TMUX_SESSION" -n "Testes"
+if [[ "$SKIP_SENSORS" == "false" ]]; then
+    tmux new-window -t "$TMUX_SESSION" -n "Testes"
 
-# Criar painel adicional
-tmux split-window -h -t "$TMUX_SESSION:Testes"
+    # Criar painel adicional
+    tmux split-window -h -t "$TMUX_SESSION:Testes"
 
-# Enviar comandos para cada painel (preparados, nao executam)
-tmux send-keys -t "$TMUX_SESSION:Testes.0" "MAVEN_OPTS='$TRACE_OPTS' mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$MALICIOUS_SENSOR_CLASS' -Dexec.args='--mode ANOMALY_DATA --password sensor123 --host $DISCOVERY_HOST --port $DISCOVERY_PF_PORT'"
-tmux send-keys -t "$TMUX_SESSION:Testes.1" "MAVEN_OPTS='$TRACE_OPTS' mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$CLIENT_APP_CLASS' -Dexec.args='CLI_CLIENT $DISCOVERY_HOST $DISCOVERY_PF_PORT'"
+    # Enviar comandos para cada painel (preparados, nao executam)
+    tmux send-keys -t "$TMUX_SESSION:Testes.0" "MAVEN_OPTS='$TRACE_OPTS' mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$MALICIOUS_SENSOR_CLASS' -Dexec.args='--mode ANOMALY_DATA --password sensor123 --host $DISCOVERY_HOST --port $DISCOVERY_PF_PORT'"
+    tmux send-keys -t "$TMUX_SESSION:Testes.1" "MAVEN_OPTS='$TRACE_OPTS' mvn -f '$POM_FILE' exec:java -Dexec.mainClass='$CLIENT_APP_CLASS' -Dexec.args='CLI_CLIENT $DISCOVERY_HOST $DISCOVERY_PF_PORT'"
 
-# Definir títulos APÓS enviar comandos
-tmux select-pane -t "$TMUX_SESSION:Testes.0" -T "⚠️ MaliciousSensor (ENTER para iniciar)"
-tmux select-pane -t "$TMUX_SESSION:Testes.1" -T "👤 ClientApp (ENTER para iniciar)"
+    # Definir títulos APÓS enviar comandos
+    tmux select-pane -t "$TMUX_SESSION:Testes.0" -T "⚠️ MaliciousSensor (ENTER para iniciar)"
+    tmux select-pane -t "$TMUX_SESSION:Testes.1" -T "👤 ClientApp (ENTER para iniciar)"
+fi
 
 ###############################################################################
 # JANELA 5: TRACE (TraceCollector + Dashboard) - apenas se TRACE_ENABLED
@@ -359,6 +381,21 @@ tmux bind-key -T prefix 'H' run-shell "TRACE_ENABLED=$TRACE_ENABLED '$SCRIPT_DIR
 
 echo ""
 echo -e "${GREEN}Sistema iniciado. Pressione Ctrl+B ? para ajuda.${NC}"
+
+if [[ "$SKIP_SENSORS" == "true" ]]; then
+    WSL_IP=$(hostname -I | awk '{print $1}')
+    echo ""
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "${YELLOW}  MODO SERVIDOR - Sensores externos${NC}"
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+    echo -e "  WSL IP: ${GREEN}$WSL_IP${NC}"
+    echo -e "  Discovery Port: ${GREEN}3040${NC}"
+    echo ""
+    echo -e "  No Windows, execute:"
+    echo -e "    ${GREEN}scripts\\start-windows-clients.bat $WSL_IP${NC}"
+    echo -e "${YELLOW}═══════════════════════════════════════════════════════════════${NC}"
+fi
+
 echo ""
 
 tmux attach-session -t "$TMUX_SESSION"

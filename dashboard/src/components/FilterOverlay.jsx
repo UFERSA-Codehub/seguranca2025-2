@@ -2,14 +2,8 @@ import { memo, useEffect, useState, useCallback, useRef } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-
-/**
- * Calcula o número máximo de itens por coluna baseado na altura do viewport.
- * Limite máximo de 10 itens por coluna para evitar scroll.
- */
 function useMaxItemsPerColumn() {
     const [maxItems, setMaxItems] = useState(10);
-
     useEffect(() => {
         const calculate = () => {
             const ITEM_HEIGHT = 36;
@@ -20,18 +14,12 @@ function useMaxItemsPerColumn() {
             const calculated = Math.max(5, Math.floor(available / ITEM_HEIGHT));
             setMaxItems(Math.min(calculated, MAX_ITEMS));
         };
-        
         calculate();
         window.addEventListener('resize', calculate);
         return () => window.removeEventListener('resize', calculate);
     }, []);
-
     return maxItems;
 }
-
-/**
- * Divide uma lista de itens em colunas com base no máximo por coluna.
- */
 function splitIntoColumns(items, maxPerColumn) {
     const columns = [];
     for (let i = 0; i < items.length; i += maxPerColumn) {
@@ -39,12 +27,6 @@ function splitIntoColumns(items, maxPerColumn) {
     }
     return columns.length > 0 ? columns : [[]];
 }
-
-/**
- * Filter overlay that appears to the left of the floating toolbar.
- * Shows entities and message types in dynamic columns based on viewport height.
- * Left-click to include (blue), right-click to exclude (red).
- */
 function FilterOverlay({
     isOpen,
     onClose,
@@ -63,29 +45,21 @@ function FilterOverlay({
 }) {
     const overlayRef = useRef(null);
     const maxItemsPerColumn = useMaxItemsPerColumn();
-
     const entityColumns = splitIntoColumns(entities, maxItemsPerColumn);
     const messageTypeColumns = splitIntoColumns(messageTypes, maxItemsPerColumn);
-
     const hasActiveFilters = selectedEntities.size > 0 || selectedMessageTypes.size > 0 || excludedEntities.size > 0 || excludedMessageTypes.size > 0;
-
-    // Fecha ao clicar fora do overlay
     const handleClickOutside = useCallback((e) => {
         if (overlayRef.current && !overlayRef.current.contains(e.target)) {
-            // Ignora cliques no floating toolbar (botão de filtro)
             const toolbar = document.querySelector('.floating-toolbar');
             if (toolbar && toolbar.contains(e.target)) return;
             onClose();
         }
     }, [onClose]);
-
-    // Fecha ao pressionar Escape
     const handleKeyDown = useCallback((e) => {
         if (e.key === 'Escape') {
             onClose();
         }
     }, [onClose]);
-
     useEffect(() => {
         if (isOpen) {
             document.addEventListener('mousedown', handleClickOutside);
@@ -96,9 +70,7 @@ function FilterOverlay({
             document.removeEventListener('keydown', handleKeyDown);
         };
     }, [isOpen, handleClickOutside, handleKeyDown]);
-
     if (!isOpen) return null;
-
     return (
         <div className={`filter-overlay ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`} ref={overlayRef}>
             {/* Header */}
@@ -125,9 +97,7 @@ function FilterOverlay({
                     </Button>
                 </div>
             </div>
-
             <Separator className="bg-slate-700" />
-
             {/* Content */}
             <div className="filter-overlay-content">
                 {/* Entities Section */}
@@ -171,9 +141,7 @@ function FilterOverlay({
                         )}
                     </div>
                 </div>
-
                 <Separator orientation="vertical" className="bg-slate-700 h-auto" />
-
                 {/* Message Types Section */}
                 <div className="filter-section">
                     <h4 className="filter-section-title">Tipos de Mensagem</h4>
@@ -219,5 +187,4 @@ function FilterOverlay({
         </div>
     );
 }
-
 export default memo(FilterOverlay);

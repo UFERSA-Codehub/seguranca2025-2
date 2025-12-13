@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/api/client';
 import { Wind, Droplets, Volume2, Factory, Sun } from 'lucide-react';
-
-// Metadata for report types
 const REPORT_METADATA = {
     'air-quality': {
         name: 'Qualidade do Ar',
@@ -31,18 +29,14 @@ const REPORT_METADATA = {
         Icon: Sun,
     },
 };
-
 export default function ReportsPage() {
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-
     useEffect(() => {
         api.reports()
             .then((data) => {
-                // API returns array of strings, transform to objects
                 const reportList = (data.reports || []).map((item) => {
-                    // Handle both string and object formats
                     const type = typeof item === 'string' ? item : item.type;
                     const metadata = REPORT_METADATA[type] || {};
                     return {
@@ -57,14 +51,11 @@ export default function ReportsPage() {
             .catch((err) => setError(err.message))
             .finally(() => setLoading(false));
     }, []);
-
     return (
         <div className="page reports-page">
             <h2>Relatórios</h2>
-
             {loading && <div className="loading-text">Carregando relatórios...</div>}
             {error && <div className="error-text">{error}</div>}
-
             {reports.length > 0 && (
                 <div className="reports-grid">
                     {reports.map((report) => {
@@ -85,7 +76,6 @@ export default function ReportsPage() {
                     })}
                 </div>
             )}
-
             {!loading && reports.length === 0 && !error && (
                 <div className="empty-state">Nenhum relatório disponível</div>
             )}

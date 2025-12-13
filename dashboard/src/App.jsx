@@ -8,7 +8,6 @@ import LoginPage from '@/pages/LoginPage';
 import HomePage from '@/pages/HomePage';
 import './App.css';
 
-// Lazy load heavier pages for code splitting
 const DataPage = lazy(() => import('@/pages/DataPage'));
 const AlertsPage = lazy(() => import('@/pages/AlertsPage'));
 const ReportsPage = lazy(() => import('@/pages/ReportsPage'));
@@ -16,7 +15,6 @@ const ReportPage = lazy(() => import('@/pages/ReportPage'));
 const TopologyPage = lazy(() => import('@/pages/TopologyPage'));
 const ArchitecturePage = lazy(() => import('@/pages/ArchitecturePage'));
 
-// Loading fallback component
 function PageLoading() {
     return (
         <div className="page-loading">
