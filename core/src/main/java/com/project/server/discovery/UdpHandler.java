@@ -154,16 +154,14 @@ public class UdpHandler {
         } else {
             String responsePayload;
             
-            // Se firewall está habilitado e protocolo é http (CLI client), retornar endereço do PacketFilter
-            if (registry.isFirewallEnabled() && "http".equals(protocol)) {
+            if ("http".equals(protocol)) {
+                // CLI clients (HTTP) go through PacketFilter:3030
                 responsePayload = registry.getExternalDatacenterClientAddress();
                 logger.debug("Retornando endereço do PacketFilter para CLI client {} ({})", senderId, peerInfo);
             } else {
-                // Senão, retornar endereço real do Datacenter
-                ServiceInfo dc = registry.getFirstDatacenter();
-                int selectedPort = "http".equals(protocol) ? dc.getHttpPort() : dc.getPort();
-                responsePayload = dc.getHost() + ":" + selectedPort;
-                logger.debug("DATACENTER {} selecionado para {} (protocolo: {})", dc.getServiceId(), senderId, protocol);
+                // Edge (TCP) goes through ReverseProxy:3022
+                responsePayload = registry.getInternalDatacenterAddress();
+                logger.debug("Retornando endereço do ReverseProxy para {} (protocolo: tcp)", senderId);
             }
             
             response = channel.buildEncryptedEnvelope(senderId, MessageTypeUDP.FOUND_DATACENTER, responsePayload);

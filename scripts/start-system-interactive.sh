@@ -33,7 +33,7 @@ done
 TRACE_OPTS=""
 if [[ "$TRACE_ENABLED" == "true" ]]; then
     TRACE_OPTS="-Dtrace.enabled=true"
-    echo -e "${GREEN}📊 Tracing habilitado${NC}"
+    echo -e "${GREEN}Tracing habilitado${NC}"
 fi
 
 ###############################################################################
@@ -87,9 +87,6 @@ if [ ${#hanging_pids[@]} -gt 0 ]; then
     echo ""
 fi
 
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║               SISTEMA DE MONITORAMENTO AMBIENTAL               ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
 
 ###############################################################################

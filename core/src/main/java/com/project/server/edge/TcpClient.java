@@ -29,6 +29,7 @@ public class TcpClient {
     private final int datacenterPort;
     private SecureTCPChannel channel;
     private volatile boolean connected;
+    private String peerId; // ID do peer (pode ser DATACENTER ou DATACENTER_EDGE via proxy)
 
     public TcpClient(String edgeId, String datacenterHost, int datacenterPort) {
         this.edgeId = edgeId;
@@ -61,7 +62,11 @@ public class TcpClient {
                 logger.error("Resposta inesperada do Datacenter: {}", challenge != null ? challenge.getType() : "null");
                 return false;
             }
-            logger.debug("CHALLENGE recebido de DATACENTER ({})", peerInfo);
+            
+            // Extrair o sender ID do CHALLENGE (pode ser DATACENTER ou DATACENTER_EDGE via proxy)
+            this.peerId = challenge.getSenderId();
+            logger.debug("CHALLENGE recebido de {} ({})", peerId, peerInfo);
+            channel.setTracePeerId(peerId);
 
             if (!channel.handleChallenge(challenge)) {
                 logger.error("Falha ao processar CHALLENGE do Datacenter");
@@ -73,7 +78,7 @@ public class TcpClient {
             authPayload.addProperty("edgeId", edgeId);
             authPayload.addProperty("secret", EDGE_SECRET);
 
-            MessageTCP authMsg = channel.buildEncryptedEnvelope("DATACENTER", MessageTypeTCP.EDGE_AUTH, authPayload.toString());
+            MessageTCP authMsg = channel.buildEncryptedEnvelope(peerId, MessageTypeTCP.EDGE_AUTH, authPayload.toString());
             if (authMsg == null) {
                 logger.error("Falha ao construir mensagem EDGE_AUTH");
                 return false;
@@ -94,7 +99,7 @@ public class TcpClient {
                 return false;
             }
 
-            EnvelopeTCP envelope = channel.decryptEnvelope("DATACENTER", authResponse);
+            EnvelopeTCP envelope = channel.decryptEnvelope(peerId, authResponse);
             if (envelope == null) {
                 logger.error("Falha ao decifrar envelope de autenticação");
                 return false;
@@ -145,7 +150,7 @@ public class TcpClient {
         payload.add("readings", readings);
 
         // Enviar DATA_BATCH com envelope cifrado
-        MessageTCP message = channel.buildEncryptedEnvelope("DATACENTER", MessageTypeTCP.DATA_BATCH, payload.toString());
+        MessageTCP message = channel.buildEncryptedEnvelope(peerId, MessageTypeTCP.DATA_BATCH, payload.toString());
         if (message == null) {
             logger.error("Falha ao construir DATA_BATCH");
             return false;
@@ -167,7 +172,7 @@ public class TcpClient {
             return false;
         }
 
-        EnvelopeTCP envelope = channel.decryptEnvelope("DATACENTER", response);
+        EnvelopeTCP envelope = channel.decryptEnvelope(peerId, response);
         if (envelope == null) {
             logger.error("Falha ao decifrar envelope DATA_ACK");
             return false;

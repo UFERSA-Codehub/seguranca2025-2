@@ -28,6 +28,10 @@ public class ServiceRegistry {
     private static final int PACKET_FILTER_EDGE_PORT = 3010;
     private static final int PACKET_FILTER_DATACENTER_CLI_PORT = 3030;
 
+    // Configuracao do ReverseProxy (interno)
+    private static final String REVERSE_PROXY_HOST = "localhost";
+    private static final int REVERSE_PROXY_DATACENTER_EDGE_PORT = 3022;
+
     // Flag para habilitar roteamento via firewall
     private boolean firewallEnabled = true;
 
@@ -222,5 +226,9 @@ public class ServiceRegistry {
 
     public String getExternalDatacenterClientAddress() {
         return PACKET_FILTER_HOST + ":" + PACKET_FILTER_DATACENTER_CLI_PORT;
+    }
+
+    public String getInternalDatacenterAddress() {
+        return REVERSE_PROXY_HOST + ":" + REVERSE_PROXY_DATACENTER_EDGE_PORT;
     }
 }

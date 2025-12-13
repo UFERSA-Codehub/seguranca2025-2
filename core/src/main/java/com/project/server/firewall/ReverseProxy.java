@@ -53,10 +53,16 @@ public class ReverseProxy implements IServer {
         this.serverSockets = new ConcurrentHashMap<>();
         
         // Build target mapping with configurable internal host
+        // 3001 = External → Auth
+        // 3011 = External → Edge
+        // 3021 = External → Datacenter (TCP)
+        // 3022 = Internal (Edge) → Datacenter (TCP)
+        // 3031 = External → Datacenter (HTTP)
         this.targetMapping = Map.of(
             3001, new ServerTarget(internalHost, 4001, "AUTH"),
             3011, new ServerTarget(internalHost, 5000, "EDGE"),
             3021, new ServerTarget(internalHost, 8080, "DATACENTER"),
+            3022, new ServerTarget(internalHost, 8080, "DATACENTER_EDGE"),
             3031, new ServerTarget(internalHost, 9090, "DATACENTER")
         );
     }

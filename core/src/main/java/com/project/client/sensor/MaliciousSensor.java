@@ -23,6 +23,7 @@ public class MaliciousSensor {
         NO_AUTH,
         ANOMALY_DATA,
         MALFORMED_DATA,
+        RATE_LIMIT,
         ALL
     }
 
@@ -89,6 +90,7 @@ public class MaliciousSensor {
                 case NO_AUTH -> attackNoAuth();
                 case ANOMALY_DATA -> attackAnomalyData();
                 case MALFORMED_DATA -> attackMalformedData();
+                case RATE_LIMIT -> attackRateLimit();
                 case ALL -> runAllAttacks();
             }
 
@@ -120,6 +122,9 @@ public class MaliciousSensor {
         
         printSeparator("TESTE 6: DADOS MALFORMADOS (JSON INVALIDO)");
         attackMalformedData();
+        
+        printSeparator("TESTE 7: RATE LIMIT DO IDS (LIMITE DE ALERTAS)");
+        attackRateLimit();
         
         logger.info("");
         logger.info("╔══════════════════════════════════════════════════════════╗");
@@ -437,6 +442,150 @@ public class MaliciousSensor {
         };
     }
 
+    /**
+     * Testa o rate limit do IDS baseado em alertas de anomalia.
+     * O IDS termina conexoes quando um sensor gera ANOMALY_THRESHOLD (2) alertas
+     * dentro de ANOMALY_WINDOW_MS (60 segundos).
+     * 
+     * Este teste envia anomalias rapidamente para verificar se o IDS
+     * aplica corretamente o limite e envia TERMINATE ao Edge.
+     */
+    private void attackRateLimit() {
+        logger.info("[ATAQUE] Testando rate limit do IDS (limite de alertas por sensor)...");
+        logger.info("");
+        logger.info("Configuracao do IDS:");
+        logger.info("  - ANOMALY_THRESHOLD: 2 alertas");
+        logger.info("  - ANOMALY_WINDOW_MS: 60 segundos");
+        logger.info("  - Esperado: conexao terminada apos 2 anomalias");
+        logger.info("");
+        
+        this.jwtToken = tcpClient.authenticateWithAuthServer(
+            udpClient.getAuthHost(),
+            udpClient.getAuthPort(),
+            password
+        );
+        
+        if (jwtToken == null) {
+            logger.error("Falha na autenticacao - nao foi possivel prosseguir");
+            return;
+        }
+        logger.info("[OK] Autenticado com sucesso");
+        
+        if (!tcpClient.connectToEdge(udpClient.getEdgeHost(), udpClient.getEdgePort())) {
+            logger.error("Falha ao conectar ao Edge");
+            return;
+        }
+        logger.info("[OK] Conectado ao Edge");
+        logger.info("");
+
+        // Enviar 1 leitura normal para estabelecer conexao
+        logger.info("[1] Enviando leitura NORMAL para estabelecer conexao...");
+        SensorData normalData = SensorData.generateRandom(sensorId);
+        boolean success = tcpClient.sendData(normalData.toJson(), jwtToken);
+        logger.info("    Resultado: {}", success ? "ACEITO" : "REJEITADO");
+        
+        if (!success) {
+            logger.error("Falha ao enviar dados normais - abortando teste");
+            tcpClient.closeEdgeChannel();
+            return;
+        }
+        
+        sleep(300);
+        logger.info("");
+
+        // Enviar anomalias rapidamente para triggerar o rate limit
+        logger.info("Enviando anomalias para triggerar rate limit do IDS...");
+        logger.info("");
+        
+        int anomalyCount = 0;
+        int maxAnomalies = 4; // Enviar ate 4, mas esperamos bloqueio apos 2
+        
+        for (int i = 1; i <= maxAnomalies; i++) {
+            JsonObject anomalyData = generateRateLimitAnomaly(i);
+            logger.info("[{}] Enviando ANOMALIA #{}: {}", i + 1, i, getAnomalyDescription(i));
+            
+            success = tcpClient.sendData(anomalyData.toString(), jwtToken);
+            anomalyCount++;
+            
+            if (!success) {
+                logger.warn("    Resultado: REJEITADO/CONEXAO FECHADA");
+                logger.info("");
+                logger.info("[RESULTADO] Conexao terminada apos {} anomalias", anomalyCount);
+                
+                if (anomalyCount == 2) {
+                    logger.info("[SEGURANCA] IDS aplicou rate limit corretamente (ANOMALY_THRESHOLD=2)");
+                } else if (anomalyCount < 2) {
+                    logger.warn("[NOTA] Conexao fechada antes do threshold esperado");
+                } else {
+                    logger.warn("[NOTA] Conexao fechada apos threshold (delay no processamento do IDS)");
+                }
+                
+                tcpClient.closeEdgeChannel();
+                return;
+            }
+            
+            logger.info("    Resultado: ACEITO (IDS alertado, aguardando threshold...)");
+            
+            // Pequena pausa entre anomalias para permitir processamento
+            sleep(500);
+        }
+        
+        tcpClient.closeEdgeChannel();
+        
+        logger.info("");
+        logger.info("[RESULTADO] Todas as {} anomalias foram aceitas", anomalyCount);
+        logger.warn("[NOTA] IDS pode nao ter aplicado rate limit ou TERMINATE nao foi recebido");
+    }
+
+    private JsonObject generateRateLimitAnomaly(int iteration) {
+        JsonObject data = new JsonObject();
+        data.addProperty("sensorId", sensorId);
+        data.addProperty("timestamp", System.currentTimeMillis());
+        
+        // Valores alternados para gerar anomalias diferentes
+        switch (iteration % 4) {
+            case 1 -> {
+                data.addProperty("temperature", 150.0); // Muito acima do max (60)
+                data.addProperty("humidity", 50.0);
+                data.addProperty("co2", 400.0);
+                data.addProperty("pm25", 10.0);
+                data.addProperty("noiseLevel", 40.0);
+            }
+            case 2 -> {
+                data.addProperty("temperature", 25.0);
+                data.addProperty("humidity", 200.0); // Muito acima do max (100)
+                data.addProperty("co2", 400.0);
+                data.addProperty("pm25", 10.0);
+                data.addProperty("noiseLevel", 40.0);
+            }
+            case 3 -> {
+                data.addProperty("temperature", 25.0);
+                data.addProperty("humidity", 50.0);
+                data.addProperty("co2", 15000.0); // Muito acima do max (5000)
+                data.addProperty("pm25", 10.0);
+                data.addProperty("noiseLevel", 40.0);
+            }
+            default -> {
+                data.addProperty("temperature", 25.0);
+                data.addProperty("humidity", 50.0);
+                data.addProperty("co2", 400.0);
+                data.addProperty("pm25", 2000.0); // Muito acima do max (500)
+                data.addProperty("noiseLevel", 40.0);
+            }
+        }
+        
+        return data;
+    }
+
+    private String getAnomalyDescription(int iteration) {
+        return switch (iteration % 4) {
+            case 1 -> "temperature=150 (max=60)";
+            case 2 -> "humidity=200 (max=100)";
+            case 3 -> "co2=15000 (max=5000)";
+            default -> "pm25=2000 (max=500)";
+        };
+    }
+
     private void printSeparator(String title) {
         logger.info("");
         logger.info("┌──────────────────────────────────────────────────────────┐");
@@ -483,6 +632,7 @@ public class MaliciousSensor {
                     System.out.println("                        NO_AUTH - Testa envio sem autenticacao");
                     System.out.println("                        ANOMALY_DATA - Envia dados com valores anomalos");
                     System.out.println("                        MALFORMED_DATA - Envia dados com JSON malformado");
+                    System.out.println("                        RATE_LIMIT - Testa limite de alertas do IDS (2 anomalias = TERMINATE)");
                     System.out.println("                        ALL - Executa todos os testes (default)");
                     return;
                 }

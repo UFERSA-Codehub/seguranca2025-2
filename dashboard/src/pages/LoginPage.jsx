@@ -36,7 +36,7 @@ export default function LoginPage() {
     return (
         <div className="login-page">
             <div className="login-card">
-                <h1>IoT Security Dashboard</h1>
+                <h1>Segurança bem feita</h1>
                 <p className="login-subtitle">Faça login para continuar</p>
 
                 <form onSubmit={handleSubmit}>
