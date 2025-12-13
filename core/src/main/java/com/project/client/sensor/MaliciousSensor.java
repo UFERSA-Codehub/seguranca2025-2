@@ -454,9 +454,9 @@ public class MaliciousSensor {
         logger.info("[ATAQUE] Testando rate limit do IDS (limite de alertas por sensor)...");
         logger.info("");
         logger.info("Configuracao do IDS:");
-        logger.info("  - ANOMALY_THRESHOLD: 2 alertas");
+        logger.info("  - ANOMALY_THRESHOLD: 1 alerta");
         logger.info("  - ANOMALY_WINDOW_MS: 60 segundos");
-        logger.info("  - Esperado: conexao terminada apos 2 anomalias");
+        logger.info("  - Esperado: conexao terminada apos 1 anomalia");
         logger.info("");
         
         this.jwtToken = tcpClient.authenticateWithAuthServer(
@@ -498,7 +498,7 @@ public class MaliciousSensor {
         logger.info("");
         
         int anomalyCount = 0;
-        int maxAnomalies = 4; // Enviar ate 4, mas esperamos bloqueio apos 2
+        int maxAnomalies = 4; // Enviar ate 4, mas esperamos bloqueio apos 1
         
         for (int i = 1; i <= maxAnomalies; i++) {
             JsonObject anomalyData = generateRateLimitAnomaly(i);
@@ -510,12 +510,10 @@ public class MaliciousSensor {
             if (!success) {
                 logger.warn("    Resultado: REJEITADO/CONEXAO FECHADA");
                 logger.info("");
-                logger.info("[RESULTADO] Conexao terminada apos {} anomalias", anomalyCount);
+                logger.info("[RESULTADO] Conexao terminada apos {} anomalia(s)", anomalyCount);
                 
-                if (anomalyCount == 2) {
-                    logger.info("[SEGURANCA] IDS aplicou rate limit corretamente (ANOMALY_THRESHOLD=2)");
-                } else if (anomalyCount < 2) {
-                    logger.warn("[NOTA] Conexao fechada antes do threshold esperado");
+                if (anomalyCount == 1) {
+                    logger.info("[SEGURANCA] IDS aplicou rate limit corretamente (ANOMALY_THRESHOLD=1)");
                 } else {
                     logger.warn("[NOTA] Conexao fechada apos threshold (delay no processamento do IDS)");
                 }
@@ -609,7 +607,7 @@ public class MaliciousSensor {
         String sensorId = "MALICIOUS_SENSOR";
         String password = "sensor123";
         String host = "localhost";
-        int port = 4000;
+        int port = 3040;
         AttackMode mode = AttackMode.ALL;
 
         for (int i = 0; i < args.length; i++) {
@@ -624,7 +622,7 @@ public class MaliciousSensor {
                     System.out.println("  --id <sensor_id>      ID do sensor (default: MALICIOUS_SENSOR)");
                     System.out.println("  --password <senha>    Senha para ataques com credenciais validas (default: sensor123)");
                     System.out.println("  --host <host>         Host do Discovery (default: localhost)");
-                    System.out.println("  --port <port>         Porta do Discovery (default: 4000)");
+                    System.out.println("  --port <port>         Porta do PacketFilter/Discovery (default: 3040)");
                     System.out.println("  --mode <mode>         Modo de ataque:");
                     System.out.println("                        INVALID_CREDENTIALS - Testa credenciais invalidas");
                     System.out.println("                        FORGED_JWT - Testa JWT forjado");

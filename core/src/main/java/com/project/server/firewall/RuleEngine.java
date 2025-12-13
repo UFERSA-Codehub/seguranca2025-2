@@ -15,15 +15,11 @@ public class RuleEngine {
 
     // Rate limit: max conexoes por segundo por IP:porta
     private static final int MAX_CONNECTIONS_PER_SECOND = 5;
-    private static final int MAX_DISCOVERY_CONNECTIONS_PER_SECOND = 30; // Higher limit for Discovery (many services register at startup)
+    private static final int MAX_DISCOVERY_CONNECTIONS_PER_SECOND = 30;
     private static final long RATE_LIMIT_WINDOW_MS = 1000;
 
     // Discovery UDP port
     private static final int DISCOVERY_PORT = 3040;
-
-    // Port scan: detecta IPs acessando multiplas portas
-    // Threshold increased to 5 because legitimate sensors access 3-4 ports:
-    // Discovery (3040), AuthServer (3000), Edge (3010), optionally Datacenter (3030)
     private static final int PORT_SCAN_THRESHOLD = 5;
     private static final long PORT_SCAN_WINDOW_MS = 5000;
 

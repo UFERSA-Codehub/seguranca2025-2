@@ -21,7 +21,7 @@ public class TcpHandler implements Runnable {
     private static final Logger logger = LoggerFactory.getLogger("IDS.TcpHandler");
     private static final Gson gson = new Gson();
 
-    private static final int ANOMALY_THRESHOLD = 2;
+    private static final int ANOMALY_THRESHOLD = 1;
     private static final long ANOMALY_WINDOW_MS = 60_000;
 
     private final Socket clientSocket;
