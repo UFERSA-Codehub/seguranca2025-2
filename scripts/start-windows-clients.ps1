@@ -74,7 +74,7 @@ function Start-SingleSensor {
 }
 
 function Start-AllSensors {
-    Write-Info "Starting all 4 sensors in separate windows..."
+    Write-Info "Starting all 4 sensors in separate WezTerm windows..."
     
     $sensors = @(
         @{ Id = "SENSOR_001"; Password = "senha123" },
@@ -88,12 +88,12 @@ function Start-AllSensors {
         $password = $sensor.Password
         $command = "mvn -f '$POM_FILE' exec:java '-Dexec.mainClass=com.project.client.sensor.Sensor' '-Dexec.args=$sensorId $password $WSL_IP $DISCOVERY_PORT'; Read-Host 'Press Enter to close'"
         
-        Start-Process pwsh -ArgumentList "-NoExit", "-Command", $command
+        Start-Process wezterm-gui -ArgumentList "start", "--", "pwsh", "-NoExit", "-Command", $command
         Write-Success "  Started $sensorId"
         Start-Sleep -Seconds 2
     }
     
-    Write-Success "All sensors started in separate windows."
+    Write-Success "All sensors started in separate WezTerm windows."
 }
 
 function Start-CliClient {
